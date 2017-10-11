@@ -1,0 +1,10 @@
+language: go
+go:
+  - 1.8
+  - 1.9
+services:
+  - docker
+install:
+  - go get -v golang.org/x/tools/cmd/cover
+script:
+  - ./integration_tests/run.sh
