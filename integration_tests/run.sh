@@ -44,4 +44,4 @@ fi
 
 PKG=`dirname $0`/../presto
 DSN=http://test@localhost:${LOCAL_PORT}
-go test -v -cover $PKG -presto_server_dsn=$DSN
+go test -v -cover -coverprofile=coverage.out $PKG -presto_server_dsn=$DSN $*

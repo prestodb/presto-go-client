@@ -43,11 +43,11 @@ func init() {
 
 // integrationServerDSN returns the URL of the integration test server.
 func integrationServerDSN(t *testing.T) string {
-	dsn := *integrationServerFlag
-	if dsn == "" {
-		t.Skip()
+	if dsn := *integrationServerFlag; dsn != "" {
+		return dsn
 	}
-	return dsn
+	t.Skip()
+	return ""
 }
 
 // integrationOpen opens a connection to the integration test server.
@@ -279,14 +279,21 @@ func TestIntegrationSessionProperties(t *testing.T) {
 func TestIntegrationTypeConversion(t *testing.T) {
 	db := integrationOpen(t)
 	var (
-		goTime     time.Time
-		nullTime   NullTime
-		goString   string
-		nullString sql.NullString
-		i64slice   NullSliceInt64
-		f64slice2  NullSlice2Float64
-		goMap      map[string]interface{}
-		nullMap    NullMap
+		goTime            time.Time
+		nullTime          NullTime
+		goString          string
+		nullString        sql.NullString
+		nullStringSlice   NullSliceString
+		nullStringSlice2  NullSlice2String
+		nullStringSlice3  NullSlice3String
+		nullInt64Slice    NullSliceInt64
+		nullInt64Slice2   NullSlice2Int64
+		nullInt64Slice3   NullSlice3Int64
+		nullFloat64Slice  NullSliceFloat64
+		nullFloat64Slice2 NullSlice2Float64
+		nullFloat64Slice3 NullSlice3Float64
+		goMap             map[string]interface{}
+		nullMap           NullMap
 	)
 	err := db.QueryRow(`
 		SELECT
@@ -294,8 +301,15 @@ func TestIntegrationTypeConversion(t *testing.T) {
 			CAST(NULL AS TIMESTAMP),
 			CAST('string' AS VARCHAR),
 			CAST(NULL AS VARCHAR),
-			ARRAY[1, 2, 3],
-			ARRAY[ARRAY[1, 1, 1], ARRAY[2, 2, 2]],
+			ARRAY['A', 'B', NULL],
+			ARRAY[ARRAY['A'], NULL],
+			ARRAY[ARRAY[ARRAY['A'], NULL], NULL],
+			ARRAY[1, 2, NULL],
+			ARRAY[ARRAY[1, 1, 1], NULL],
+			ARRAY[ARRAY[ARRAY[1, 1, 1], NULL], NULL],
+			ARRAY[1.0, 2.0, NULL],
+			ARRAY[ARRAY[1.1, 1.1, 1.1], NULL],
+			ARRAY[ARRAY[ARRAY[1.1, 1.1, 1.1], NULL], NULL],
 			MAP(ARRAY['a', 'b'], ARRAY['c', 'd']),
 			CAST(NULL AS MAP(ARRAY(INTEGER), ARRAY(INTEGER)))
 	`).Scan(
@@ -303,8 +317,15 @@ func TestIntegrationTypeConversion(t *testing.T) {
 		&nullTime,
 		&goString,
 		&nullString,
-		&i64slice,
-		&f64slice2,
+		&nullStringSlice,
+		&nullStringSlice2,
+		&nullStringSlice3,
+		&nullInt64Slice,
+		&nullInt64Slice2,
+		&nullInt64Slice3,
+		&nullFloat64Slice,
+		&nullFloat64Slice2,
+		&nullFloat64Slice3,
 		&goMap,
 		&nullMap,
 	)

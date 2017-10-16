@@ -125,10 +125,6 @@ func newConn(dsn string) (*Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("presto: malformed dsn: %v", err)
 	}
-	prestoQuery, err := url.ParseQuery(prestoURL.RawQuery)
-	if err != nil {
-		return nil, fmt.Errorf("presto: malformed query in dsn: %v", err)
-	}
 	var user string
 	if prestoURL.User != nil {
 		user = prestoURL.User.Username()
@@ -138,6 +134,7 @@ func newConn(dsn string) (*Conn, error) {
 		httpClient:  *http.DefaultClient,
 		httpHeaders: make(http.Header),
 	}
+	prestoQuery := prestoURL.Query()
 	if clientKey := prestoQuery.Get("custom_client"); clientKey != "" {
 		client := getCustomClient(clientKey)
 		if client == nil {
@@ -266,12 +263,13 @@ func (c *Conn) roundTrip(ctx context.Context, req *http.Request) (*http.Response
 			client.Timeout = timeout
 			resp, err := client.Do(req)
 			if err != nil {
-				return nil, err
+				return nil, &ErrQueryFailed{Reason: err}
 			}
 			switch resp.StatusCode {
 			case http.StatusOK:
 				return resp, nil
 			case http.StatusServiceUnavailable:
+				resp.Body.Close()
 				timer.Reset(delay)
 				delay = time.Duration(math.Min(
 					float64(delay)*math.Phi,
@@ -423,11 +421,9 @@ func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue
 	if err != nil {
 		return nil, fmt.Errorf("presto: %v", err)
 	}
-	if sr.Error.ErrorName != "" {
-		return nil, &ErrQueryFailed{
-			StatusCode: resp.StatusCode,
-			Reason:     &sr.Error,
-		}
+	err = handleResponseError(resp.StatusCode, sr.Error)
+	if err != nil {
+		return nil, err
 	}
 	rows := &driverRows{
 		ctx:     ctx,
@@ -552,6 +548,20 @@ type infoResponse struct {
 	State   string `json:"state"`
 }
 
+func handleResponseError(status int, respErr stmtError) error {
+	switch respErr.ErrorName {
+	case "":
+		return nil
+	case "USER_CANCELLED":
+		return ErrQueryCancelled
+	default:
+		return &ErrQueryFailed{
+			StatusCode: status,
+			Reason:     &respErr,
+		}
+	}
+}
+
 func (qr *driverRows) fetch() error {
 	req, err := qr.conn.newRequest("GET", qr.nextURI, nil)
 	if err != nil {
@@ -567,16 +577,9 @@ func (qr *driverRows) fetch() error {
 	if err != nil {
 		return fmt.Errorf("presto: %v", err)
 	}
-	switch qresp.Error.ErrorName {
-	case "":
-		// empty, no error.
-	case "USER_CANCELLED":
-		return ErrQueryCancelled
-	default:
-		return &ErrQueryFailed{
-			StatusCode: resp.StatusCode,
-			Reason:     &qresp.Error,
-		}
+	err = handleResponseError(resp.StatusCode, qresp.Error)
+	if err != nil {
+		return err
 	}
 	qr.rowindex = 0
 	qr.data = qresp.Data
@@ -598,12 +601,20 @@ func (qr *driverRows) initColumns(qresp *queryResponse) {
 	qr.coltype = make([]driver.ValueConverter, len(qresp.Columns))
 	for i, col := range qresp.Columns {
 		qr.columns[i] = col.Name
-		qr.coltype[i] = &typeConverter{TypeName: col.Type}
+		qr.coltype[i] = newTypeConverter(col.Type)
 	}
 }
 
 type typeConverter struct {
-	TypeName string
+	typeName   string
+	parsedType []string // e.g. array, array, varchar, for [][]string
+}
+
+func newTypeConverter(typeName string) *typeConverter {
+	return &typeConverter{
+		typeName:   typeName,
+		parsedType: parseType(typeName),
+	}
 }
 
 // parses presto types, e.g. array(varchar(10)) to "array", "varchar"
@@ -625,11 +636,7 @@ func parseType(name string) []string {
 
 // ConvertValue implements the driver.ValueConverter interface.
 func (c *typeConverter) ConvertValue(v interface{}) (driver.Value, error) {
-	parsedType := parseType(c.TypeName)
-	if v == nil {
-		return nil, nil
-	}
-	switch parsedType[0] {
+	switch c.parsedType[0] {
 	case "boolean":
 		vv, err := scanNullBool(v)
 		return vv.Bool, err
@@ -646,14 +653,38 @@ func (c *typeConverter) ConvertValue(v interface{}) (driver.Value, error) {
 		vv, err := scanNullTime(v)
 		return vv.Time, err
 	case "map":
-		m := &NullMap{}
-		err := m.Scan(v)
-		return m.Map, err
+		if err := validateMap(v); err != nil {
+			return nil, err
+		}
+		return v, nil
 	case "array":
+		if err := validateSlice(v); err != nil {
+			return nil, err
+		}
 		return v, nil
 	default:
-		return nil, fmt.Errorf("type not supported: %q", c.TypeName)
+		return nil, fmt.Errorf("type not supported: %q", c.typeName)
 	}
+}
+
+func validateMap(v interface{}) error {
+	if v == nil {
+		return nil
+	}
+	if _, ok := v.(map[string]interface{}); !ok {
+		return fmt.Errorf("cannot convert %v (%T) to map", v, v)
+	}
+	return nil
+}
+
+func validateSlice(v interface{}) error {
+	if v == nil {
+		return nil
+	}
+	if _, ok := v.([]interface{}); !ok {
+		return fmt.Errorf("cannot convert %v (%T) to slice", v, v)
+	}
+	return nil
 }
 
 func scanNullBool(v interface{}) (sql.NullBool, error) {
@@ -1228,11 +1259,11 @@ func (s *NullSliceMap) Scan(value interface{}) error {
 	}
 	slice := make([]NullMap, len(vs))
 	for i := range vs {
-		m := NullMap{}
-		err := m.Scan(vs[i])
-		if err != nil {
-			return err
+		if err := validateMap(vs[i]); err != nil {
+			return fmt.Errorf("cannot convert %v (%T) to []NullMap", value, value)
 		}
+		m := NullMap{}
+		m.Scan(vs[i])
 		slice[i] = m
 	}
 	s.SliceMap = slice
