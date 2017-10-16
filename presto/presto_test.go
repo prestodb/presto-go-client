@@ -13,7 +13,12 @@
 package presto
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 	"time"
@@ -33,218 +38,550 @@ func TestConfig(t *testing.T) {
 	}
 }
 
+func TestConfigWithMalformedURL(t *testing.T) {
+	_, err := (&Config{PrestoURI: ":("}).FormatDSN()
+	if err == nil {
+		t.Fatal("dsn generated from malformed url")
+	}
+}
+
+func TestConnErrorDSN(t *testing.T) {
+	testcases := []struct {
+		Name string
+		DSN  string
+	}{
+		{Name: "malformed", DSN: "://"},
+		{Name: "unknown_client", DSN: "http://localhost?custom_client=unknown"},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.Name, func(t *testing.T) {
+			db, err := sql.Open("presto", tc.DSN)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = db.Query("SELECT 1"); err == nil {
+				db.Close()
+				t.Fatal("test dsn is supposed to fail:", tc.DSN)
+			}
+		})
+	}
+}
+
+func TestRegisterCustomClientReserved(t *testing.T) {
+	for _, tc := range []string{"true", "false"} {
+		t.Run(fmt.Sprintf("%v", tc), func(t *testing.T) {
+			err := RegisterCustomClient(tc, &http.Client{})
+			if err == nil {
+				t.Fatal("client key name supposed to fail:", tc)
+			}
+		})
+	}
+}
+
+func TestRoundTripRetryQueryError(t *testing.T) {
+	count := 0
+	var ts *httptest.Server
+	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if count == 0 {
+			count++
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(&stmtResponse{
+			Error: stmtError{
+				ErrorName: "TEST",
+			},
+		})
+	}))
+	defer ts.Close()
+	db, err := sql.Open("presto", ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = db.Query("SELECT 1")
+	if _, ok := err.(*ErrQueryFailed); !ok {
+		t.Fatal("unexpected error:", err)
+	}
+}
+
+func TestRoundTripCancellation(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer ts.Close()
+	db, err := sql.Open("presto", ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, err = db.QueryContext(ctx, "SELECT 1")
+	if err == nil {
+		t.Fatal("unexpected query with cancelled context succeeded")
+	}
+}
+
+func TestQueryCancellation(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(&stmtResponse{
+			Error: stmtError{
+				ErrorName: "USER_CANCELLED",
+			},
+		})
+	}))
+	defer ts.Close()
+	db, err := sql.Open("presto", ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = db.Query("SELECT 1")
+	if err != ErrQueryCancelled {
+		t.Fatal("unexpected error:", err)
+	}
+}
+
+func TestQueryFailure(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+	db, err := sql.Open("presto", ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = db.Query("SELECT 1")
+	if _, ok := err.(*ErrQueryFailed); !ok {
+		t.Fatal("unexpected error:", err)
+	}
+}
+
+func TestUnsupportedExec(t *testing.T) {
+	db, err := sql.Open("presto", "http://localhost:9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec("CREATE TABLE foobar (V VARCHAR)"); err == nil {
+		t.Fatal("unsupported exec succeeded with no error")
+	}
+}
+
+func TestUnsupportedTransaction(t *testing.T) {
+	db, err := sql.Open("presto", "http://localhost:9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Begin(); err == nil {
+		t.Fatal("unsupported transaction succeeded with no error")
+	}
+}
+
 func TestTypeConversion(t *testing.T) {
 	utc, err := time.LoadLocation("UTC")
 	if err != nil {
 		t.Fatal(err)
 	}
-	testdata := []struct {
-		TypeName string
-		Data     interface{}
-		Want     interface{}
+	testcases := []struct {
+		PrestoType                       string
+		PrestoResponseUnmarshalledSample interface{}
+		ExpectedGoValue                  interface{}
 	}{
 		{
-			TypeName: "boolean",
-			Data:     true,
+			PrestoType:                       "boolean",
+			PrestoResponseUnmarshalledSample: true,
+			ExpectedGoValue:                  true,
 		},
 		{
-			TypeName: "varchar(1)",
-			Data:     "hello",
+			PrestoType:                       "varchar(1)",
+			PrestoResponseUnmarshalledSample: "hello",
+			ExpectedGoValue:                  "hello",
 		},
 		{
-			TypeName: "bigint",
-			Data:     float64(1),
-			Want:     int64(1),
+			PrestoType:                       "bigint",
+			PrestoResponseUnmarshalledSample: float64(1),
+			ExpectedGoValue:                  int64(1),
 		},
 		{
-			TypeName: "double",
-			Data:     float64(1),
+			PrestoType:                       "double",
+			PrestoResponseUnmarshalledSample: float64(1),
+			ExpectedGoValue:                  float64(1),
 		},
 		{
-			TypeName: "date",
-			Data:     "2017-07-10",
-			Want:     time.Date(2017, 7, 10, 0, 0, 0, 0, utc),
+			PrestoType:                       "date",
+			PrestoResponseUnmarshalledSample: "2017-07-10",
+			ExpectedGoValue:                  time.Date(2017, 7, 10, 0, 0, 0, 0, utc),
 		},
 		{
-			TypeName: "time",
-			Data:     "01:02:03.000",
-			Want:     time.Date(0, 1, 1, 1, 2, 3, 0, utc),
+			PrestoType:                       "time",
+			PrestoResponseUnmarshalledSample: "01:02:03.000",
+			ExpectedGoValue:                  time.Date(0, 1, 1, 1, 2, 3, 0, utc),
 		},
 		{
-			TypeName: "time with time zone",
-			Data:     "01:02:03.000 UTC",
-			Want:     time.Date(0, 1, 1, 1, 2, 3, 0, utc),
+			PrestoType:                       "time with time zone",
+			PrestoResponseUnmarshalledSample: "01:02:03.000 UTC",
+			ExpectedGoValue:                  time.Date(0, 1, 1, 1, 2, 3, 0, utc),
 		},
 		{
-			TypeName: "timestamp",
-			Data:     "2017-07-10 01:02:03.000",
-			Want:     time.Date(2017, 7, 10, 1, 2, 3, 0, utc),
+			PrestoType:                       "timestamp",
+			PrestoResponseUnmarshalledSample: "2017-07-10 01:02:03.000",
+			ExpectedGoValue:                  time.Date(2017, 7, 10, 1, 2, 3, 0, utc),
 		},
 		{
-			TypeName: "timestamp with time zone",
-			Data:     "2017-07-10 01:02:03.000 UTC",
-			Want:     time.Date(2017, 7, 10, 1, 2, 3, 0, utc),
+			PrestoType:                       "timestamp with time zone",
+			PrestoResponseUnmarshalledSample: "2017-07-10 01:02:03.000 UTC",
+			ExpectedGoValue:                  time.Date(2017, 7, 10, 1, 2, 3, 0, utc),
 		},
 		{
-			TypeName: "map",
-			Data:     map[string]interface{}{"hello": "world"},
+			PrestoType:                       "map",
+			PrestoResponseUnmarshalledSample: nil,
+			ExpectedGoValue:                  nil,
 		},
 		{
 			// arrays return data as-is for slice scanners
-			TypeName: "array",
-			Data:     "passthrough",
+			PrestoType:                       "array",
+			PrestoResponseUnmarshalledSample: nil,
+			ExpectedGoValue:                  nil,
 		},
 	}
-	for _, td := range testdata {
-		t.Run(td.TypeName, func(t *testing.T) {
-			tc := typeConverter{TypeName: td.TypeName}
-			if _, err := tc.ConvertValue(nil); err != nil {
+	for _, tc := range testcases {
+		converter := newTypeConverter(tc.PrestoType)
+
+		t.Run(tc.PrestoType+":nil", func(t *testing.T) {
+			if _, err := converter.ConvertValue(nil); err != nil {
 				t.Fatal(err)
 			}
-			v, err := tc.ConvertValue(td.Data)
+		})
+
+		t.Run(tc.PrestoType+":bogus", func(t *testing.T) {
+			if _, err := converter.ConvertValue(struct{}{}); err == nil {
+				t.Fatal("bogus data scanned with no error")
+			}
+		})
+		t.Run(tc.PrestoType+":sample", func(t *testing.T) {
+			v, err := converter.ConvertValue(tc.PrestoResponseUnmarshalledSample)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if td.Want == nil {
-				td.Want = td.Data
-			}
-			if !reflect.DeepEqual(v, td.Want) {
-				t.Fatalf("unexpected data: have %v, want %v", v, td.Want)
+			if !reflect.DeepEqual(v, tc.ExpectedGoValue) {
+				t.Fatalf("unexpected data from sample:\nhave %+v\nwant %+v", v, tc.ExpectedGoValue)
 			}
 		})
 	}
 }
 
 func TestSliceTypeConversion(t *testing.T) {
-	testdata := []struct {
-		TypeName string
-		Scanner  sql.Scanner
-		Data     interface{} // data as returned from presto
-		NullData interface{}
+	testcases := []struct {
+		GoType                           string
+		Scanner                          sql.Scanner
+		PrestoResponseUnmarshalledSample interface{}
+		TestScanner                      func(t *testing.T, s sql.Scanner)
 	}{
 		{
-			TypeName: "[]bool",
-			Scanner:  &NullSliceBool{},
-			Data:     []interface{}{true},
-			NullData: []interface{}{nil},
+			GoType:  "[]bool",
+			Scanner: &NullSliceBool{},
+			PrestoResponseUnmarshalledSample: []interface{}{true},
+			TestScanner: func(t *testing.T, s sql.Scanner) {
+				v, _ := s.(*NullSliceBool)
+				if !v.Valid {
+					t.Fatal("scanner failed")
+				}
+			},
 		},
 		{
-			TypeName: "[][]bool",
-			Scanner:  &NullSlice2Bool{},
-			Data:     []interface{}{[]interface{}{true}},
-			NullData: []interface{}{[]interface{}{nil}},
+			GoType:  "[]string",
+			Scanner: &NullSliceString{},
+			PrestoResponseUnmarshalledSample: []interface{}{"hello"},
+			TestScanner: func(t *testing.T, s sql.Scanner) {
+				v, _ := s.(*NullSliceString)
+				if !v.Valid {
+					t.Fatal("scanner failed")
+				}
+			},
 		},
 		{
-			TypeName: "[][][]bool",
-			Scanner:  &NullSlice3Bool{},
-			Data:     []interface{}{[]interface{}{[]interface{}{true}}},
-			NullData: []interface{}{[]interface{}{[]interface{}{nil}}},
+			GoType:  "[]int64",
+			Scanner: &NullSliceInt64{},
+			PrestoResponseUnmarshalledSample: []interface{}{float64(1)},
+			TestScanner: func(t *testing.T, s sql.Scanner) {
+				v, _ := s.(*NullSliceInt64)
+				if !v.Valid {
+					t.Fatal("scanner failed")
+				}
+			},
+		},
+
+		{
+			GoType:  "[]float64",
+			Scanner: &NullSliceFloat64{},
+			PrestoResponseUnmarshalledSample: []interface{}{float64(1)},
+			TestScanner: func(t *testing.T, s sql.Scanner) {
+				v, _ := s.(*NullSliceFloat64)
+				if !v.Valid {
+					t.Fatal("scanner failed")
+				}
+			},
 		},
 		{
-			TypeName: "[]string",
-			Scanner:  &NullSliceString{},
-			Data:     []interface{}{"hello"},
-			NullData: []interface{}{nil},
+			GoType:  "[]time.Time",
+			Scanner: &NullSliceTime{},
+			PrestoResponseUnmarshalledSample: []interface{}{"2017-07-01"},
+			TestScanner: func(t *testing.T, s sql.Scanner) {
+				v, _ := s.(*NullSliceTime)
+				if !v.Valid {
+					t.Fatal("scanner failed")
+				}
+			},
 		},
 		{
-			TypeName: "[][]string",
-			Scanner:  &NullSlice2String{},
-			Data:     []interface{}{[]interface{}{"hello"}},
-			NullData: []interface{}{[]interface{}{nil}},
-		},
-		{
-			TypeName: "[][][]string",
-			Scanner:  &NullSlice3String{},
-			Data:     []interface{}{[]interface{}{[]interface{}{"hello"}}},
-			NullData: []interface{}{[]interface{}{[]interface{}{nil}}},
-		},
-		{
-			TypeName: "[]int64",
-			Scanner:  &NullSliceInt64{},
-			Data:     []interface{}{float64(1)},
-			NullData: []interface{}{nil},
-		},
-		{
-			TypeName: "[][]int64",
-			Scanner:  &NullSlice2Int64{},
-			Data:     []interface{}{[]interface{}{float64(1)}},
-			NullData: []interface{}{[]interface{}{nil}},
-		},
-		{
-			TypeName: "[][][]int64",
-			Scanner:  &NullSlice3Int64{},
-			Data:     []interface{}{[]interface{}{[]interface{}{float64(1)}}},
-			NullData: []interface{}{[]interface{}{[]interface{}{nil}}},
-		},
-		{
-			TypeName: "[]float64",
-			Scanner:  &NullSliceFloat64{},
-			Data:     []interface{}{float64(1)},
-			NullData: []interface{}{nil},
-		},
-		{
-			TypeName: "[][]float64",
-			Scanner:  &NullSlice2Float64{},
-			Data:     []interface{}{[]interface{}{float64(1)}},
-			NullData: []interface{}{[]interface{}{nil}},
-		},
-		{
-			TypeName: "[][][]float64",
-			Scanner:  &NullSlice3Float64{},
-			Data:     []interface{}{[]interface{}{[]interface{}{float64(1)}}},
-			NullData: []interface{}{[]interface{}{[]interface{}{nil}}},
-		},
-		{
-			TypeName: "[]time.Time",
-			Scanner:  &NullSliceTime{},
-			Data:     []interface{}{"2017-07-01"},
-			NullData: []interface{}{nil},
-		},
-		{
-			TypeName: "[][]time.Time",
-			Scanner:  &NullSlice2Time{},
-			Data:     []interface{}{[]interface{}{"2017-07-01"}},
-			NullData: []interface{}{[]interface{}{nil}},
-		},
-		{
-			TypeName: "[][][]time.Time",
-			Scanner:  &NullSlice3Time{},
-			Data:     []interface{}{[]interface{}{[]interface{}{"2017-07-01"}}},
-			NullData: []interface{}{[]interface{}{[]interface{}{nil}}},
-		},
-		{
-			TypeName: "[]NullMap",
-			Scanner:  &NullSliceMap{},
-			Data:     []interface{}{map[string]interface{}{"hello": "world"}},
-			NullData: []interface{}{nil},
-		},
-		{
-			TypeName: "[][]NullMap",
-			Scanner:  &NullSlice2Map{},
-			Data:     []interface{}{[]interface{}{map[string]interface{}{"hello": "world"}}},
-			NullData: []interface{}{[]interface{}{nil}},
-		},
-		{
-			TypeName: "[][][]NullMap",
-			Scanner:  &NullSlice3Map{},
-			Data:     []interface{}{[]interface{}{[]interface{}{map[string]interface{}{"hello": "world"}}}},
-			NullData: []interface{}{[]interface{}{[]interface{}{nil}}},
+			GoType:  "[]map[string]interface{}",
+			Scanner: &NullSliceMap{},
+			PrestoResponseUnmarshalledSample: []interface{}{map[string]interface{}{"hello": "world"}},
+			TestScanner: func(t *testing.T, s sql.Scanner) {
+				v, _ := s.(*NullSliceMap)
+				if !v.Valid {
+					t.Fatal("scanner failed")
+				}
+			},
 		},
 	}
-	for _, td := range testdata {
-		t.Run(td.TypeName, func(t *testing.T) {
-			if err := td.Scanner.Scan(td.Data); err != nil {
+	for _, tc := range testcases {
+		t.Run(tc.GoType+":nil", func(t *testing.T) {
+			if err := tc.Scanner.Scan(nil); err != nil {
 				t.Error(err)
 			}
-			if err := td.Scanner.Scan(td.NullData); err != nil {
+		})
+
+		t.Run(tc.GoType+":bogus", func(t *testing.T) {
+			if err := tc.Scanner.Scan(struct{}{}); err == nil {
+				t.Error("bogus data scanned with no error")
+			}
+			if err := tc.Scanner.Scan([]interface{}{struct{}{}}); err == nil {
+				t.Error("bogus data scanned with no error")
+			}
+		})
+
+		t.Run(tc.GoType+":sample", func(t *testing.T) {
+			if err := tc.Scanner.Scan(tc.PrestoResponseUnmarshalledSample); err != nil {
 				t.Error(err)
 			}
-			if err := td.Scanner.Scan(nil); err != nil {
+			tc.TestScanner(t, tc.Scanner)
+		})
+	}
+}
+
+func TestSlice2TypeConversion(t *testing.T) {
+	testcases := []struct {
+		GoType                           string
+		Scanner                          sql.Scanner
+		PrestoResponseUnmarshalledSample interface{}
+		TestScanner                      func(t *testing.T, s sql.Scanner)
+	}{
+		{
+			GoType:  "[][]bool",
+			Scanner: &NullSlice2Bool{},
+			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{true}},
+			TestScanner: func(t *testing.T, s sql.Scanner) {
+				v, _ := s.(*NullSlice2Bool)
+				if !v.Valid {
+					t.Fatal("scanner failed")
+				}
+			},
+		},
+		{
+			GoType:  "[][]string",
+			Scanner: &NullSlice2String{},
+			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{"hello"}},
+			TestScanner: func(t *testing.T, s sql.Scanner) {
+				v, _ := s.(*NullSlice2String)
+				if !v.Valid {
+					t.Fatal("scanner failed")
+				}
+			},
+		},
+		{
+			GoType:  "[][]int64",
+			Scanner: &NullSlice2Int64{},
+			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{float64(1)}},
+			TestScanner: func(t *testing.T, s sql.Scanner) {
+				v, _ := s.(*NullSlice2Int64)
+				if !v.Valid {
+					t.Fatal("scanner failed")
+				}
+			},
+		},
+		{
+			GoType:  "[][]float64",
+			Scanner: &NullSlice2Float64{},
+			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{float64(1)}},
+			TestScanner: func(t *testing.T, s sql.Scanner) {
+				v, _ := s.(*NullSlice2Float64)
+				if !v.Valid {
+					t.Fatal("scanner failed")
+				}
+			},
+		},
+		{
+			GoType:  "[][]time.Time",
+			Scanner: &NullSlice2Time{},
+			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{"2017-07-01"}},
+			TestScanner: func(t *testing.T, s sql.Scanner) {
+				v, _ := s.(*NullSlice2Time)
+				if !v.Valid {
+					t.Fatal("scanner failed")
+				}
+			},
+		},
+		{
+			GoType:  "[][]map[string]interface{}",
+			Scanner: &NullSlice2Map{},
+			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{map[string]interface{}{"hello": "world"}}},
+			TestScanner: func(t *testing.T, s sql.Scanner) {
+				v, _ := s.(*NullSlice2Map)
+				if !v.Valid {
+					t.Fatal("scanner failed")
+				}
+			},
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.GoType+":nil", func(t *testing.T) {
+			if err := tc.Scanner.Scan(nil); err != nil {
 				t.Error(err)
 			}
-			if err := td.Scanner.Scan("!"); err == nil {
-				t.Error("unexpected scan succeeded with bad data")
+			if err := tc.Scanner.Scan([]interface{}{nil}); err != nil {
+				t.Error(err)
 			}
+		})
+
+		t.Run(tc.GoType+":bogus", func(t *testing.T) {
+			if err := tc.Scanner.Scan(struct{}{}); err == nil {
+				t.Error("bogus data scanned with no error")
+			}
+			if err := tc.Scanner.Scan([]interface{}{struct{}{}}); err == nil {
+				t.Error("bogus data scanned with no error")
+			}
+			if err := tc.Scanner.Scan([]interface{}{[]interface{}{struct{}{}}}); err == nil {
+				t.Error("bogus data scanned with no error")
+			}
+		})
+
+		t.Run(tc.GoType+":sample", func(t *testing.T) {
+			if err := tc.Scanner.Scan(tc.PrestoResponseUnmarshalledSample); err != nil {
+				t.Error(err)
+			}
+			tc.TestScanner(t, tc.Scanner)
+		})
+	}
+}
+
+func TestSlice3TypeConversion(t *testing.T) {
+	testcases := []struct {
+		GoType                           string
+		Scanner                          sql.Scanner
+		PrestoResponseUnmarshalledSample interface{}
+		TestScanner                      func(t *testing.T, s sql.Scanner)
+	}{
+		{
+			GoType:  "[][][]bool",
+			Scanner: &NullSlice3Bool{},
+			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{[]interface{}{true}}},
+			TestScanner: func(t *testing.T, s sql.Scanner) {
+				v, _ := s.(*NullSlice3Bool)
+				if !v.Valid {
+					t.Fatal("scanner failed")
+				}
+			},
+		},
+		{
+			GoType:  "[][][]string",
+			Scanner: &NullSlice3String{},
+			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{[]interface{}{"hello"}}},
+			TestScanner: func(t *testing.T, s sql.Scanner) {
+				v, _ := s.(*NullSlice3String)
+				if !v.Valid {
+					t.Fatal("scanner failed")
+				}
+			},
+		},
+		{
+			GoType:  "[][][]int64",
+			Scanner: &NullSlice3Int64{},
+			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{[]interface{}{float64(1)}}},
+			TestScanner: func(t *testing.T, s sql.Scanner) {
+				v, _ := s.(*NullSlice3Int64)
+				if !v.Valid {
+					t.Fatal("scanner failed")
+				}
+			},
+		},
+		{
+			GoType:  "[][][]float64",
+			Scanner: &NullSlice3Float64{},
+			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{[]interface{}{float64(1)}}},
+			TestScanner: func(t *testing.T, s sql.Scanner) {
+				v, _ := s.(*NullSlice3Float64)
+				if !v.Valid {
+					t.Fatal("scanner failed")
+				}
+			},
+		},
+		{
+			GoType:  "[][][]time.Time",
+			Scanner: &NullSlice3Time{},
+			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{[]interface{}{"2017-07-01"}}},
+			TestScanner: func(t *testing.T, s sql.Scanner) {
+				v, _ := s.(*NullSlice3Time)
+				if !v.Valid {
+					t.Fatal("scanner failed")
+				}
+			},
+		},
+		{
+			GoType:  "[][][]map[string]interface{}",
+			Scanner: &NullSlice3Map{},
+			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{[]interface{}{map[string]interface{}{"hello": "world"}}}},
+			TestScanner: func(t *testing.T, s sql.Scanner) {
+				v, _ := s.(*NullSlice3Map)
+				if !v.Valid {
+					t.Fatal("scanner failed")
+				}
+			},
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.GoType+":nil", func(t *testing.T) {
+			if err := tc.Scanner.Scan(nil); err != nil {
+				t.Fatal(err)
+			}
+			if err := tc.Scanner.Scan([]interface{}{[]interface{}{nil}}); err != nil {
+				t.Fatal(err)
+			}
+		})
+
+		t.Run(tc.GoType+":bogus", func(t *testing.T) {
+			if err := tc.Scanner.Scan(struct{}{}); err == nil {
+				t.Error("bogus data scanned with no error")
+			}
+			if err := tc.Scanner.Scan([]interface{}{[]interface{}{struct{}{}}}); err == nil {
+				t.Error("bogus data scanned with no error")
+			}
+			if err := tc.Scanner.Scan([]interface{}{[]interface{}{[]interface{}{struct{}{}}}}); err == nil {
+				t.Error("bogus data scanned with no error")
+			}
+		})
+
+		t.Run(tc.GoType+":sample", func(t *testing.T) {
+			if err := tc.Scanner.Scan(tc.PrestoResponseUnmarshalledSample); err != nil {
+				t.Error(err)
+			}
+			tc.TestScanner(t, tc.Scanner)
 		})
 	}
 }
