@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 LOCAL_PORT=8080
 IMAGE_NAME=presto/test_server
