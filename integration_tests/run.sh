@@ -3,6 +3,8 @@
 LOCAL_PORT=8080
 IMAGE_NAME=presto/test_server
 
+cd "$( dirname "${BASH_SOURCE[0]}" )"
+
 function test_container() {
 	echo `docker ps | grep $IMAGE_NAME | cut -d\  -f1`
 }
@@ -42,6 +44,6 @@ then
 	exit 1
 fi
 
-PKG=`dirname $0`/../presto
+PKG=../presto
 DSN=http://test@localhost:${LOCAL_PORT}
 go test -v -cover -coverprofile=coverage.out $PKG -presto_server_dsn=$DSN $*
