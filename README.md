@@ -80,7 +80,7 @@ The driver supports both HTTP and HTTPS. If you use HTTPS it's recommended that 
 
 *Parameters are case-sensitive*
 
-Refer to the [Presto Concepts](https://github.com/prestodb/presto/blob/master/presto-docs/src/main/sphinx/overview/concepts.rst) documentation for more information.
+Refer to the [Presto Concepts](https://prestodb.io/docs/current/overview/concepts.html) documentation for more information.
 
 ##### `source`
 
