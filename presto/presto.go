@@ -150,9 +150,13 @@ func newConn(dsn string) (*Conn, error) {
 		return nil, fmt.Errorf("presto: malformed dsn: %v", err)
 	}
 	var user string
+	var pass string
+
 	if prestoURL.User != nil {
 		user = prestoURL.User.Username()
+		pass, _ = prestoURL.User.Password()
 	}
+
 	c := &Conn{
 		baseURL:     prestoURL.Scheme + "://" + prestoURL.Host,
 		httpClient:  *http.DefaultClient,
@@ -176,6 +180,9 @@ func newConn(dsn string) (*Conn, error) {
 		if v != "" {
 			c.httpHeaders.Add(k, v)
 		}
+	}
+	if pass != "" {
+		c.httpHeaders.Add("Authorization", "Basic "+basicAuth(user, pass))
 	}
 	return c, nil
 }
