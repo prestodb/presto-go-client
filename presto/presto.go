@@ -135,6 +135,7 @@ func (c *Config) FormatDSN() (string, error) {
 // Conn is a presto connection.
 type Conn struct {
 	baseURL     string
+	auth        *url.Userinfo
 	httpClient  http.Client
 	httpHeaders http.Header
 }
@@ -150,18 +151,21 @@ func newConn(dsn string) (*Conn, error) {
 		return nil, fmt.Errorf("presto: malformed dsn: %v", err)
 	}
 	var user string
-	var pass string
-
-	if prestoURL.User != nil {
-		user = prestoURL.User.Username()
-		pass, _ = prestoURL.User.Password()
-	}
 
 	c := &Conn{
 		baseURL:     prestoURL.Scheme + "://" + prestoURL.Host,
 		httpClient:  *http.DefaultClient,
 		httpHeaders: make(http.Header),
 	}
+
+	if prestoURL.User != nil {
+		user = prestoURL.User.Username()
+		pass, _ := prestoURL.User.Password()
+		if pass != "" && prestoURL.Scheme == "https" {
+			c.auth = prestoURL.User
+		}
+	}
+
 	prestoQuery := prestoURL.Query()
 	if clientKey := prestoQuery.Get("custom_client"); clientKey != "" {
 		client := getCustomClient(clientKey)
@@ -181,9 +185,7 @@ func newConn(dsn string) (*Conn, error) {
 			c.httpHeaders.Add(k, v)
 		}
 	}
-	if pass != "" {
-		c.httpHeaders.Add("Authorization", "Basic "+basicAuth(user, pass))
-	}
+
 	return c, nil
 }
 
@@ -272,6 +274,10 @@ func (c *Conn) newRequest(method, url string, body io.Reader) (*http.Request, er
 	}
 	for k, v := range c.httpHeaders {
 		req.Header[k] = v
+	}
+	if c.auth != nil {
+		pass, _ := c.auth.Password()
+		req.SetBasicAuth(c.auth.Username(), pass)
 	}
 	return req, nil
 }
