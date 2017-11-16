@@ -20,6 +20,7 @@ A [Presto](https://prestodb.io) client for the [Go](https://golang.org) programm
 
 * Native Go implementation
 * Connections over HTTP or HTTPS
+* Basic auth
 * Support custom HTTP client (tunable conn pools, timeouts, TLS)
 * Supports conversion from Presto to native Go data types
   * `string`, `sql.NullString`
@@ -69,12 +70,14 @@ db, err := sql.Open("presto", dsn)
 The Data Source Name is a URL with a mandatory username, and optional query string parameters that are supported by this driver, in the following format:
 
 ```
-http[s]://user@host[:port][?parameters]
+http[s]://user[:pass]@host[:port][?parameters]
 ```
 
 The easiest way to build your DSN is by using the [Config.FormatDSN](https://godoc.org/github.com/prestodb/presto-go-client/presto#Config.FormatDSN) helper function.
 
 The driver supports both HTTP and HTTPS. If you use HTTPS it's recommended that you also provide a custom `http.Client` that can validate (or skip) the security checks of the server certificate, and/or to configure TLS client authentication.
+
+Note: If pass is specified in the DSN and scheme is https, then the client will set a basic auth header in every request to presto.
 
 #### Parameters
 
