@@ -700,13 +700,13 @@ func (c *typeConverter) ConvertValue(v interface{}) (driver.Value, error) {
 		}
 		return v, nil
 	case "decimal":
-        if v == nil {
-            return nil,nil
-        }
-        if value, ok := v.(string); ok {
-            return value, nil
-        }
-        return nil, fmt.Errorf("cannot convert %v (%T) to string",v ,v)
+        	if v == nil {
+            		return nil,nil
+        	}
+        	if value, ok := v.(string); ok {
+            		return value, nil
+        	}
+        	return nil, fmt.Errorf("cannot convert %v (%T) to string",v ,v)
 	default:
 		return nil, fmt.Errorf("type not supported: %q", c.typeName)
 	}
