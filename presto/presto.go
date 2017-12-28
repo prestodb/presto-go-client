@@ -677,7 +677,7 @@ func (c *typeConverter) ConvertValue(v interface{}) (driver.Value, error) {
 	case "boolean":
 		vv, err := scanNullBool(v)
 		return vv.Bool, err
-	case "json", "char", "varchar", "varbinary", "interval year to month", "interval day to second":
+	case "json", "char", "varchar", "varbinary", "interval year to month", "interval day to second", "decimal":
 		vv, err := scanNullString(v)
 		return vv.String, err
 	case "tinyint", "smallint", "integer", "bigint":
@@ -699,14 +699,6 @@ func (c *typeConverter) ConvertValue(v interface{}) (driver.Value, error) {
 			return nil, err
 		}
 		return v, nil
-	case "decimal":
-		if v == nil {
-			return nil, nil
-		}
-		if value, ok := v.(string); ok {
-			return value, nil
-		}
-		return nil, fmt.Errorf("cannot convert %v (%T) to string", v, v)
 	default:
 		return nil, fmt.Errorf("type not supported: %q", c.typeName)
 	}
