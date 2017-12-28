@@ -116,9 +116,13 @@ func (c *Config) FormatDSN() (string, error) {
 			sessionkv = append(sessionkv, k+"="+v)
 		}
 	}
+	source := c.Source
+	if source == "" {
+		source = "presto-go-client"
+	}
 	query := make(url.Values)
+	query.Add("source", source)
 	for k, v := range map[string]string{
-		"source":             c.Source,
 		"catalog":            c.Catalog,
 		"schema":             c.Schema,
 		"session_properties": strings.Join(sessionkv, ","),
