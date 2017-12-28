@@ -676,18 +676,33 @@ func (c *typeConverter) ConvertValue(v interface{}) (driver.Value, error) {
 	switch c.parsedType[0] {
 	case "boolean":
 		vv, err := scanNullBool(v)
+		if !vv.Valid {
+			return nil, err
+		}
 		return vv.Bool, err
 	case "json", "char", "varchar", "varbinary", "interval year to month", "interval day to second", "decimal":
 		vv, err := scanNullString(v)
+		if !vv.Valid {
+			return nil, err
+		}
 		return vv.String, err
 	case "tinyint", "smallint", "integer", "bigint":
 		vv, err := scanNullInt64(v)
+		if !vv.Valid {
+			return nil, err
+		}
 		return vv.Int64, err
 	case "real", "double":
 		vv, err := scanNullFloat64(v)
+		if !vv.Valid {
+			return nil, err
+		}
 		return vv.Float64, err
 	case "date", "time", "time with time zone", "timestamp", "timestamp with time zone":
 		vv, err := scanNullTime(v)
+		if !vv.Valid {
+			return nil, err
+		}
 		return vv.Time, err
 	case "map":
 		if err := validateMap(v); err != nil {
