@@ -33,7 +33,8 @@ func TestConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dsn != "http://foobar@localhost:8080?session_properties=query_priority%3D1" {
+	want := "http://foobar@localhost:8080?session_properties=query_priority%3D1&source=presto-go-client"
+	if dsn != want {
 		t.Fatal("unexpected dsn:", dsn)
 	}
 }
