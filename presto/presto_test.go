@@ -81,8 +81,7 @@ func TestRegisterCustomClientReserved(t *testing.T) {
 
 func TestRoundTripRetryQueryError(t *testing.T) {
 	count := 0
-	var ts *httptest.Server
-	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if count == 0 {
 			count++
 			w.WriteHeader(http.StatusServiceUnavailable)
