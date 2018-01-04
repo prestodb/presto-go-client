@@ -77,7 +77,11 @@ The easiest way to build your DSN is by using the [Config.FormatDSN](https://god
 
 The driver supports both HTTP and HTTPS. If you use HTTPS it's recommended that you also provide a custom `http.Client` that can validate (or skip) the security checks of the server certificate, and/or to configure TLS client authentication.
 
-Note: If pass is specified in the DSN and scheme is https, then the client will set a basic auth header in every request to presto.
+#### HTTP Basic authentication
+
+If the DSN contains a password, the client enables HTTP Basic authentication by setting the `Authorization` header in every request to presto.
+
+HTTP Basic authentication **is only supported on encrypted connections over HTTPS**.
 
 #### Parameters
 
