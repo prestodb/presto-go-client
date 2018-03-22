@@ -684,7 +684,7 @@ func (c *typeConverter) ConvertValue(v interface{}) (driver.Value, error) {
 			return nil, err
 		}
 		return vv.Bool, err
-	case "json", "char", "varchar", "varbinary", "interval year to month", "interval day to second", "decimal":
+	case "json", "char", "varchar", "varbinary", "interval year to month", "interval day to second", "decimal", "unknown":
 		vv, err := scanNullString(v)
 		if !vv.Valid {
 			return nil, err
