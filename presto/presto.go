@@ -61,6 +61,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -485,7 +486,7 @@ type driverRows struct {
 	err      error
 	rowindex int
 	columns  []string
-	coltype  []driver.ValueConverter
+	coltype  []*typeConverter
 	data     []queryData
 }
 
@@ -527,6 +528,16 @@ func (qr *driverRows) Columns() []string {
 		}
 	}
 	return qr.columns
+}
+
+var coltypeLengthSuffix = regexp.MustCompile(`\(\d+\)$`)
+
+func (qr *driverRows) ColumnTypeDatabaseTypeName(index int) string {
+	name := qr.coltype[index].typeName
+	if m := coltypeLengthSuffix.FindStringSubmatch(name); m != nil {
+		name = name[0 : len(name)-len(m[0])]
+	}
+	return name
 }
 
 func (qr *driverRows) Next(dest []driver.Value) error {
@@ -639,7 +650,7 @@ func (qr *driverRows) fetch() error {
 
 func (qr *driverRows) initColumns(qresp *queryResponse) {
 	qr.columns = make([]string, len(qresp.Columns))
-	qr.coltype = make([]driver.ValueConverter, len(qresp.Columns))
+	qr.coltype = make([]*typeConverter, len(qresp.Columns))
 	for i, col := range qresp.Columns {
 		qr.columns[i] = col.Name
 		qr.coltype[i] = newTypeConverter(col.Type)
