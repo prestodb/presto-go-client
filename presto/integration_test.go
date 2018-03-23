@@ -15,6 +15,7 @@ package presto
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"os"
 	"strings"
@@ -330,6 +331,20 @@ func TestIntegrationTypeConversion(t *testing.T) {
 		&nullMap,
 	)
 	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIntegrationNoResults(t *testing.T) {
+	db := integrationOpen(t)
+	rows, err := db.Query("SELECT 1 LIMIT 0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		t.Fatal(errors.New("Rows returned"))
+	}
+	if err = rows.Err(); err != nil {
 		t.Fatal(err)
 	}
 }

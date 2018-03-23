@@ -472,7 +472,7 @@ func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue
 		conn:    st.conn,
 		nextURI: sr.NextURI,
 	}
-	if err = rows.fetch(); err != nil {
+	if err = rows.fetch(false); err != nil {
 		return nil, err
 	}
 	return rows, nil
@@ -522,7 +522,7 @@ func (qr *driverRows) Columns() []string {
 		return []string{}
 	}
 	if qr.columns == nil {
-		if err := qr.fetch(); err != nil {
+		if err := qr.fetch(false); err != nil {
 			qr.err = err
 			return []string{}
 		}
@@ -549,7 +549,7 @@ func (qr *driverRows) Next(dest []driver.Value) error {
 			qr.err = io.EOF
 			return qr.err
 		}
-		if err := qr.fetch(); err != nil {
+		if err := qr.fetch(true); err != nil {
 			qr.err = err
 			return err
 		}
@@ -614,7 +614,7 @@ func handleResponseError(status int, respErr stmtError) error {
 	}
 }
 
-func (qr *driverRows) fetch() error {
+func (qr *driverRows) fetch(allowEOF bool) error {
 	req, err := qr.conn.newRequest("GET", qr.nextURI, nil)
 	if err != nil {
 		return err
@@ -638,9 +638,11 @@ func (qr *driverRows) fetch() error {
 	qr.nextURI = qresp.NextURI
 	if len(qr.data) == 0 {
 		if qr.nextURI != "" {
-			return qr.fetch()
+			return qr.fetch(allowEOF)
 		}
-		return io.EOF
+		if allowEOF {
+			return io.EOF
+		}
 	}
 	if qr.columns == nil && len(qresp.Columns) > 0 {
 		qr.initColumns(&qresp)
