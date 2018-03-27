@@ -1050,6 +1050,9 @@ func scanNullFloat64(v interface{}) (sql.NullFloat64, error) {
 	}
 	vv, ok := v.(float64)
 	if !ok {
+		if v == "NaN" {
+			return sql.NullFloat64{Valid: true, Float64: math.NaN()}, nil
+		}
 		return sql.NullFloat64{},
 			fmt.Errorf("cannot convert %v (%T) to float64", v, v)
 	}
