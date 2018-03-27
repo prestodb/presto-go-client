@@ -61,6 +61,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -116,9 +117,13 @@ func (c *Config) FormatDSN() (string, error) {
 			sessionkv = append(sessionkv, k+"="+v)
 		}
 	}
+	source := c.Source
+	if source == "" {
+		source = "presto-go-client"
+	}
 	query := make(url.Values)
+	query.Add("source", source)
 	for k, v := range map[string]string{
-		"source":             c.Source,
 		"catalog":            c.Catalog,
 		"schema":             c.Schema,
 		"session_properties": strings.Join(sessionkv, ","),
@@ -150,7 +155,6 @@ func newConn(dsn string) (*Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("presto: malformed dsn: %v", err)
 	}
-	var user string
 
 	c := &Conn{
 		baseURL:     prestoURL.Scheme + "://" + prestoURL.Host,
@@ -158,6 +162,7 @@ func newConn(dsn string) (*Conn, error) {
 		httpHeaders: make(http.Header),
 	}
 
+	var user string
 	if prestoURL.User != nil {
 		user = prestoURL.User.Username()
 		pass, _ := prestoURL.User.Password()
@@ -467,7 +472,7 @@ func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue
 		conn:    st.conn,
 		nextURI: sr.NextURI,
 	}
-	if err = rows.fetch(); err != nil {
+	if err = rows.fetch(false); err != nil {
 		return nil, err
 	}
 	return rows, nil
@@ -481,7 +486,7 @@ type driverRows struct {
 	err      error
 	rowindex int
 	columns  []string
-	coltype  []driver.ValueConverter
+	coltype  []*typeConverter
 	data     []queryData
 }
 
@@ -517,12 +522,22 @@ func (qr *driverRows) Columns() []string {
 		return []string{}
 	}
 	if qr.columns == nil {
-		if err := qr.fetch(); err != nil {
+		if err := qr.fetch(false); err != nil {
 			qr.err = err
 			return []string{}
 		}
 	}
 	return qr.columns
+}
+
+var coltypeLengthSuffix = regexp.MustCompile(`\(\d+\)$`)
+
+func (qr *driverRows) ColumnTypeDatabaseTypeName(index int) string {
+	name := qr.coltype[index].typeName
+	if m := coltypeLengthSuffix.FindStringSubmatch(name); m != nil {
+		name = name[0 : len(name)-len(m[0])]
+	}
+	return name
 }
 
 func (qr *driverRows) Next(dest []driver.Value) error {
@@ -534,7 +549,7 @@ func (qr *driverRows) Next(dest []driver.Value) error {
 			qr.err = io.EOF
 			return qr.err
 		}
-		if err := qr.fetch(); err != nil {
+		if err := qr.fetch(true); err != nil {
 			qr.err = err
 			return err
 		}
@@ -599,7 +614,7 @@ func handleResponseError(status int, respErr stmtError) error {
 	}
 }
 
-func (qr *driverRows) fetch() error {
+func (qr *driverRows) fetch(allowEOF bool) error {
 	req, err := qr.conn.newRequest("GET", qr.nextURI, nil)
 	if err != nil {
 		return err
@@ -623,9 +638,11 @@ func (qr *driverRows) fetch() error {
 	qr.nextURI = qresp.NextURI
 	if len(qr.data) == 0 {
 		if qr.nextURI != "" {
-			return qr.fetch()
+			return qr.fetch(allowEOF)
 		}
-		return io.EOF
+		if allowEOF {
+			return io.EOF
+		}
 	}
 	if qr.columns == nil && len(qresp.Columns) > 0 {
 		qr.initColumns(&qresp)
@@ -635,7 +652,7 @@ func (qr *driverRows) fetch() error {
 
 func (qr *driverRows) initColumns(qresp *queryResponse) {
 	qr.columns = make([]string, len(qresp.Columns))
-	qr.coltype = make([]driver.ValueConverter, len(qresp.Columns))
+	qr.coltype = make([]*typeConverter, len(qresp.Columns))
 	for i, col := range qresp.Columns {
 		qr.columns[i] = col.Name
 		qr.coltype[i] = newTypeConverter(col.Type)
@@ -676,18 +693,33 @@ func (c *typeConverter) ConvertValue(v interface{}) (driver.Value, error) {
 	switch c.parsedType[0] {
 	case "boolean":
 		vv, err := scanNullBool(v)
+		if !vv.Valid {
+			return nil, err
+		}
 		return vv.Bool, err
-	case "json", "char", "varchar", "varbinary", "interval year to month", "interval day to second", "decimal":
+	case "json", "char", "varchar", "varbinary", "interval year to month", "interval day to second", "decimal", "unknown":
 		vv, err := scanNullString(v)
+		if !vv.Valid {
+			return nil, err
+		}
 		return vv.String, err
 	case "tinyint", "smallint", "integer", "bigint":
 		vv, err := scanNullInt64(v)
+		if !vv.Valid {
+			return nil, err
+		}
 		return vv.Int64, err
 	case "real", "double":
 		vv, err := scanNullFloat64(v)
+		if !vv.Valid {
+			return nil, err
+		}
 		return vv.Float64, err
 	case "date", "time", "time with time zone", "timestamp", "timestamp with time zone":
 		vv, err := scanNullTime(v)
+		if !vv.Valid {
+			return nil, err
+		}
 		return vv.Time, err
 	case "map":
 		if err := validateMap(v); err != nil {

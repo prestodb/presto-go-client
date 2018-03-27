@@ -33,7 +33,8 @@ func TestConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dsn != "http://foobar@localhost:8080?session_properties=query_priority%3D1" {
+	want := "http://foobar@localhost:8080?session_properties=query_priority%3D1&source=presto-go-client"
+	if dsn != want {
 		t.Fatal("unexpected dsn:", dsn)
 	}
 }
@@ -80,8 +81,7 @@ func TestRegisterCustomClientReserved(t *testing.T) {
 
 func TestRoundTripRetryQueryError(t *testing.T) {
 	count := 0
-	var ts *httptest.Server
-	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if count == 0 {
 			count++
 			w.WriteHeader(http.StatusServiceUnavailable)
