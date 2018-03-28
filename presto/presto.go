@@ -1049,7 +1049,9 @@ func scanNullFloat64(v interface{}) (sql.NullFloat64, error) {
 		return sql.NullFloat64{}, nil
 	}
 	vv, ok := v.(float64)
-	if !ok {
+	if ok {
+		return sql.NullFloat64{Valid: true, Float64: vv}, nil
+	} else {
 		switch v {
 		case "NaN":
 			return sql.NullFloat64{Valid: true, Float64: math.NaN()}, nil
@@ -1061,7 +1063,7 @@ func scanNullFloat64(v interface{}) (sql.NullFloat64, error) {
 			return sql.NullFloat64{}, fmt.Errorf("cannot convert %v (%T) to float64", v, v)
 		}
 	}
-	return sql.NullFloat64{Valid: true, Float64: vv}, nil
+
 }
 
 // NullSliceFloat64 represents a slice of float64 that may be null.
