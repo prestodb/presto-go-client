@@ -1052,9 +1052,14 @@ func scanNullFloat64(v interface{}) (sql.NullFloat64, error) {
 	if !ok {
 		if v == "NaN" {
 			return sql.NullFloat64{Valid: true, Float64: math.NaN()}, nil
+		} else if v == "Infinity" {
+			return sql.NullFloat64{Valid: true, Float64: math.Inf(+1)}, nil
+		} else if v == "-Infinity" {
+			return sql.NullFloat64{Valid: true, Float64: math.Inf(-1)}, nil
+		} else {
+			return sql.NullFloat64{},
+				fmt.Errorf("cannot convert %v (%T) to float64", v, v)
 		}
-		return sql.NullFloat64{},
-			fmt.Errorf("cannot convert %v (%T) to float64", v, v)
 	}
 	return sql.NullFloat64{Valid: true, Float64: vv}, nil
 }
