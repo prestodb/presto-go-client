@@ -162,15 +162,14 @@ func newConn(dsn string) (*Conn, error) {
 		httpHeaders: make(http.Header),
 	}
 
-	var user string
+	var user, pass string
 	if prestoURL.User != nil {
 		user = prestoURL.User.Username()
-		pass, _ := prestoURL.User.Password()
+		pass, _ = prestoURL.User.Password()
 		if pass != "" && prestoURL.Scheme == "https" {
 			c.auth = prestoURL.User
 		}
 	}
-
 	prestoQuery := prestoURL.Query()
 	if clientKey := prestoQuery.Get("custom_client"); clientKey != "" {
 		client := getCustomClient(clientKey)
@@ -180,11 +179,12 @@ func newConn(dsn string) (*Conn, error) {
 		c.httpClient = *client
 	}
 	for k, v := range map[string]string{
-		"X-Presto-User":    user,
-		"X-Presto-Source":  prestoQuery.Get("source"),
-		"X-Presto-Catalog": prestoQuery.Get("catalog"),
-		"X-Presto-Schema":  prestoQuery.Get("schema"),
-		"X-Presto-Session": prestoQuery.Get("session_properties"),
+		"X-Presto-User":     user,
+		"X-Presto-Password": pass,
+		"X-Presto-Source":   prestoQuery.Get("source"),
+		"X-Presto-Catalog":  prestoQuery.Get("catalog"),
+		"X-Presto-Schema":   prestoQuery.Get("schema"),
+		"X-Presto-Session":  prestoQuery.Get("session_properties"),
 	} {
 		if v != "" {
 			c.httpHeaders.Add(k, v)
