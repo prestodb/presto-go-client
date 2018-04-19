@@ -348,3 +348,71 @@ func TestIntegrationNoResults(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestIntegrationQueryParametersSelect(t *testing.T) {
+	scenarios := []struct {
+		name          string
+		query         string
+		args          []interface{}
+		expectedError bool
+		expectedRows  int
+	}{
+		{
+			name:         "valid string as varchar",
+			query:        "SELECT * FROM system.runtime.nodes WHERE system.runtime.nodes.node_id=?",
+			args:         []interface{}{"test"},
+			expectedRows: 1,
+		},
+		{
+			name:         "valid int as bigint",
+			query:        "SELECT * FROM tpch.sf1.customer WHERE custkey=? LIMIT 2",
+			args:         []interface{}{int(1)},
+			expectedRows: 1,
+		},
+		{
+			name:          "invalid string as bigint",
+			query:         "SELECT * FROM tpch.sf1.customer WHERE custkey=? LIMIT 2",
+			args:          []interface{}{"1"},
+			expectedError: true,
+		},
+		{
+			name:          "valid string as date",
+			query:         "SELECT * FROM tpch.sf1.lineitem WHERE shipdate=? LIMIT 2",
+			args:          []interface{}{"1995-01-27"},
+			expectedError: true,
+		},
+	}
+
+	for i := range scenarios {
+		scenario := scenarios[i]
+
+		t.Run(scenario.name, func(t *testing.T) {
+			db := integrationOpen(t)
+			defer db.Close()
+
+			rows, err := db.Query(scenario.query, scenario.args...)
+			if err != nil {
+				if scenario.expectedError {
+					return
+				}
+				t.Fatal(err)
+			}
+			defer rows.Close()
+
+			if scenario.expectedError {
+				t.Fatal("missing expected error")
+			}
+
+			var count int
+			for rows.Next() {
+				count++
+			}
+			if err = rows.Err(); err != nil {
+				t.Fatal(err)
+			}
+			if count != scenario.expectedRows {
+				t.Fatalf("expecting %d rows, got %d", scenario.expectedRows, count)
+			}
+		})
+	}
+}

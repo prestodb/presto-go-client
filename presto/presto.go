@@ -272,14 +272,19 @@ func (c *Conn) Close() error {
 	return nil
 }
 
-func (c *Conn) newRequest(method, url string, body io.Reader) (*http.Request, error) {
+func (c *Conn) newRequest(method, url string, body io.Reader, hs http.Header) (*http.Request, error) {
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, fmt.Errorf("presto: %v", err)
 	}
+
 	for k, v := range c.httpHeaders {
 		req.Header[k] = v
 	}
+	for k, v := range hs {
+		req.Header[k] = v
+	}
+
 	if c.auth != nil {
 		pass, _ := c.auth.Password()
 		req.SetBasicAuth(c.auth.Username(), pass)
@@ -444,15 +449,35 @@ func (st *driverStmt) Query(args []driver.Value) (driver.Rows, error) {
 	return nil, driver.ErrSkip
 }
 
+const (
+	preparedStatementHeader = "X-Presto-Prepared-Statement"
+	preparedStatementName   = "_presto_go"
+)
+
 func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
+	query := st.query
+	var hs http.Header
+
 	if len(args) > 0 {
-		return nil, ErrOperationNotSupported
+		hs = make(http.Header)
+		hs.Add(preparedStatementHeader, preparedStatementName+"="+st.query)
+
+		ss := make([]string, len(args))
+		for i, arg := range args {
+			s, err := Serial(arg.Value)
+			if err != nil {
+				return nil, err
+			}
+			ss[i] = s
+		}
+		query = "EXECUTE " + preparedStatementName + " USING " + strings.Join(ss, ", ")
 	}
-	baseURL := st.conn.baseURL + "/v1/statement"
-	req, err := st.conn.newRequest("POST", baseURL, strings.NewReader(st.query))
+
+	req, err := st.conn.newRequest("POST", st.conn.baseURL+"/v1/statement", strings.NewReader(query), hs)
 	if err != nil {
 		return nil, err
 	}
+
 	resp, err := st.conn.roundTrip(ctx, req)
 	if err != nil {
 		return nil, err
@@ -494,7 +519,7 @@ var _ driver.Rows = &driverRows{}
 
 func (qr *driverRows) Close() error {
 	if qr.nextURI != "" {
-		req, err := qr.conn.newRequest("DELETE", qr.nextURI, nil)
+		req, err := qr.conn.newRequest("DELETE", qr.nextURI, nil, nil)
 		if err != nil {
 			return err
 		}
@@ -615,7 +640,7 @@ func handleResponseError(status int, respErr stmtError) error {
 }
 
 func (qr *driverRows) fetch(allowEOF bool) error {
-	req, err := qr.conn.newRequest("GET", qr.nextURI, nil)
+	req, err := qr.conn.newRequest("GET", qr.nextURI, nil, nil)
 	if err != nil {
 		return err
 	}
