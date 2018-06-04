@@ -42,7 +42,7 @@ You need a working environment with Go installed and $GOPATH set.
 Download and install presto database/sql driver:
 
 ```bash
-go get github.com/prestodb/presto-go-client
+go get github.com/prestodb/presto-go-client/presto
 ```
 
 Make sure you have Git installed and in your $PATH.
