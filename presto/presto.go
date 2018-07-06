@@ -460,7 +460,7 @@ func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue
 
 	if len(args) > 0 {
 		hs = make(http.Header)
-		hs.Add(preparedStatementHeader, preparedStatementName+"="+st.query)
+		hs.Add(preparedStatementHeader, preparedStatementName+"="+url.QueryEscape(st.query))
 
 		ss := make([]string, len(args))
 		for i, arg := range args {
