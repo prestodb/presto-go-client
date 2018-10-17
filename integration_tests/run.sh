@@ -1,4 +1,5 @@
 #!/bin/bash
+# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 
 LOCAL_PORT=8080
 IMAGE_NAME=presto/test_server
@@ -10,7 +11,8 @@ function test_container() {
 }
 
 function test_cleanup() {
-	docker rm -f `test_container`
+	local id=`test_container`
+	[ -n "$id" ] && docker rm -f $id
 	#docker rmi $IMAGE_NAME
 }
 
