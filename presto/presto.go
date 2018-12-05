@@ -221,7 +221,12 @@ func newConn(dsn string) (*Conn, error) {
 	}
 
 	var httpClient = http.DefaultClient
-	if prestoURL.Scheme == "https" {
+	if clientKey := prestoQuery.Get("custom_client"); clientKey != "" {
+		httpClient = getCustomClient(clientKey)
+		if httpClient == nil {
+			return nil, fmt.Errorf("presto: custom client not registered: %q", clientKey)
+		}
+	} else if prestoURL.Scheme == "https" {
 		cert, err := ioutil.ReadFile(prestoQuery.Get(SSLCertPathConfig))
 		if err != nil {
 			return nil, fmt.Errorf("presto: Error loading SSL Cert File: %v", err)
@@ -255,13 +260,6 @@ func newConn(dsn string) (*Conn, error) {
 		}
 	}
 
-	if clientKey := prestoQuery.Get("custom_client"); clientKey != "" {
-		client := getCustomClient(clientKey)
-		if client == nil {
-			return nil, fmt.Errorf("presto: custom client not registered: %q", clientKey)
-		}
-		c.httpClient = *client
-	}
 	for k, v := range map[string]string{
 		"X-Presto-User":    user,
 		"X-Presto-Source":  prestoQuery.Get("source"),
