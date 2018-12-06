@@ -60,9 +60,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gopkg.in/jcmturner/gokrb5.v6/client"
-	"gopkg.in/jcmturner/gokrb5.v6/config"
-	"gopkg.in/jcmturner/gokrb5.v6/keytab"
 	"io"
 	"io/ioutil"
 	"math"
@@ -74,6 +71,9 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"gopkg.in/jcmturner/gokrb5.v6/client"
+	"gopkg.in/jcmturner/gokrb5.v6/config"
+	"gopkg.in/jcmturner/gokrb5.v6/keytab"
 )
 
 func init() {
@@ -366,7 +366,6 @@ func (c *Conn) newRequest(method, url string, body io.Reader, hs http.Header) (*
 		}
 	}
 
-	fmt.Printf("new Request %v", req)
 	for k, v := range c.httpHeaders {
 		req.Header[k] = v
 	}
