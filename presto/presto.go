@@ -53,6 +53,8 @@ package presto
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
@@ -69,6 +71,10 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"gopkg.in/jcmturner/gokrb5.v6/client"
+	"gopkg.in/jcmturner/gokrb5.v6/config"
+	"gopkg.in/jcmturner/gokrb5.v6/keytab"
 )
 
 func init() {
@@ -89,6 +95,15 @@ var (
 	ErrQueryCancelled = errors.New("presto: query cancelled")
 )
 
+const (
+	KerberosEnabledConfig    = "KerberosEnabled"
+	kerberosKeytabPathConfig = "KerberosKeytabPath"
+	kerberosPrincipalConfig  = "KerberosPrincipal"
+	kerberosRealmConfig      = "KerberosRealm"
+	kerberosConfigPathConfig = "KerberosConfigPath"
+	SSLCertPathConfig        = "SSLCertPath"
+)
+
 type sqldriver struct{}
 
 func (d *sqldriver) Open(name string) (driver.Conn, error) {
@@ -99,12 +114,18 @@ var _ driver.Driver = &sqldriver{}
 
 // Config is a configuration that can be encoded to a DSN string.
 type Config struct {
-	PrestoURI         string            // URI of the Presto server, e.g. http://user@localhost:8080
-	Source            string            // Source of the connection (optional)
-	Catalog           string            // Catalog (optional)
-	Schema            string            // Schema (optional)
-	SessionProperties map[string]string // Session properties (optional)
-	CustomClientName  string            // Custom client name (optional)
+	PrestoURI          string            // URI of the Presto server, e.g. http://user@localhost:8080
+	Source             string            // Source of the connection (optional)
+	Catalog            string            // Catalog (optional)
+	Schema             string            // Schema (optional)
+	SessionProperties  map[string]string // Session properties (optional)
+	CustomClientName   string            // Custom client name (optional)
+	KerberosEnabled    string            // KerberosEnabled (optional, default is false)
+	KerberosKeytabPath string            // Kerberos Keytab Path (optional)
+	KerberosPrincipal  string            // Kerberos Principal used to authenticate to KDC (optional)
+	KerberosRealm      string            // The Kerberos Realm (optional)
+	KerberosConfigPath string            // The krb5 config path (optional)
+	SSLCertPath        string            // The SSL cert path for TLS verification (optional)
 }
 
 // FormatDSN returns a DSN string from the configuration.
@@ -125,6 +146,25 @@ func (c *Config) FormatDSN() (string, error) {
 	}
 	query := make(url.Values)
 	query.Add("source", source)
+
+	KerberosEnabled, _ := strconv.ParseBool(c.KerberosEnabled)
+	isSSL := prestoURL.Scheme == "https"
+
+	if isSSL {
+		query.Add(SSLCertPathConfig, c.SSLCertPath)
+	}
+
+	if KerberosEnabled {
+		query.Add(KerberosEnabledConfig, "true")
+		query.Add(kerberosKeytabPathConfig, c.KerberosKeytabPath)
+		query.Add(kerberosPrincipalConfig, c.KerberosPrincipal)
+		query.Add(kerberosRealmConfig, c.KerberosRealm)
+		query.Add(kerberosConfigPathConfig, c.KerberosConfigPath)
+		if !isSSL {
+			return "", fmt.Errorf("presto: client configuration error, SSL must be enabled for secure env")
+		}
+	}
+
 	for k, v := range map[string]string{
 		"catalog":            c.Catalog,
 		"schema":             c.Schema,
@@ -141,10 +181,12 @@ func (c *Config) FormatDSN() (string, error) {
 
 // Conn is a presto connection.
 type Conn struct {
-	baseURL     string
-	auth        *url.Userinfo
-	httpClient  http.Client
-	httpHeaders http.Header
+	baseURL         string
+	auth            *url.Userinfo
+	httpClient      http.Client
+	httpHeaders     http.Header
+	kerberosClient  client.Client
+	kerberosEnabled bool
 }
 
 var (
@@ -158,10 +200,56 @@ func newConn(dsn string) (*Conn, error) {
 		return nil, fmt.Errorf("presto: malformed dsn: %v", err)
 	}
 
+	prestoQuery := prestoURL.Query()
+
+	kerberosEnabled, _ := strconv.ParseBool(prestoQuery.Get(KerberosEnabledConfig))
+
+	var kerberosClient client.Client
+
+	if kerberosEnabled {
+		kt, err := keytab.Load(prestoQuery.Get(kerberosKeytabPathConfig))
+		if err != nil {
+			return nil, fmt.Errorf("presto: Error loading Keytab: %v", err)
+		}
+
+		kerberosClient = client.NewClientWithKeytab(prestoQuery.Get(kerberosPrincipalConfig), prestoQuery.Get(kerberosRealmConfig), kt)
+		conf, err := config.Load(prestoQuery.Get(kerberosConfigPathConfig))
+		if err != nil {
+			return nil, fmt.Errorf("presto: Error loading krb config: %v", err)
+		}
+
+		kerberosClient.WithConfig(conf)
+	}
+
+	var httpClient = http.DefaultClient
+	if clientKey := prestoQuery.Get("custom_client"); clientKey != "" {
+		httpClient = getCustomClient(clientKey)
+		if httpClient == nil {
+			return nil, fmt.Errorf("presto: custom client not registered: %q", clientKey)
+		}
+	} else if prestoURL.Scheme == "https" {
+		cert, err := ioutil.ReadFile(prestoQuery.Get(SSLCertPathConfig))
+		if err != nil {
+			return nil, fmt.Errorf("presto: Error loading SSL Cert File: %v", err)
+		}
+		certPool := x509.NewCertPool()
+		certPool.AppendCertsFromPEM(cert)
+
+		httpClient = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					RootCAs: certPool,
+				},
+			},
+		}
+	}
+
 	c := &Conn{
-		baseURL:     prestoURL.Scheme + "://" + prestoURL.Host,
-		httpClient:  *http.DefaultClient,
-		httpHeaders: make(http.Header),
+		baseURL:         prestoURL.Scheme + "://" + prestoURL.Host,
+		httpClient:      *httpClient,
+		httpHeaders:     make(http.Header),
+		kerberosClient:  kerberosClient,
+		kerberosEnabled: kerberosEnabled,
 	}
 
 	var user string
@@ -173,14 +261,6 @@ func newConn(dsn string) (*Conn, error) {
 		}
 	}
 
-	prestoQuery := prestoURL.Query()
-	if clientKey := prestoQuery.Get("custom_client"); clientKey != "" {
-		client := getCustomClient(clientKey)
-		if client == nil {
-			return nil, fmt.Errorf("presto: custom client not registered: %q", clientKey)
-		}
-		c.httpClient = *client
-	}
 	for k, v := range map[string]string{
 		"X-Presto-User":    user,
 		"X-Presto-Source":  prestoQuery.Get("source"),
@@ -278,6 +358,13 @@ func (c *Conn) newRequest(method, url string, body io.Reader, hs http.Header) (*
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, fmt.Errorf("presto: %v", err)
+	}
+
+	if c.kerberosEnabled {
+		err = c.kerberosClient.SetSPNEGOHeader(req, "presto/"+req.URL.Hostname())
+		if err != nil {
+			return nil, fmt.Errorf("error setting client SPNEGO header: %v", err)
+		}
 	}
 
 	for k, v := range c.httpHeaders {
