@@ -219,6 +219,11 @@ func newConn(dsn string) (*Conn, error) {
 		}
 
 		kerberosClient.WithConfig(conf)
+
+		loginErr := kerberosClient.Login()
+		if loginErr != nil {
+			return nil, fmt.Errorf("presto: Error login to KDC: %v", loginErr)
+		}
 	}
 
 	var httpClient = http.DefaultClient
