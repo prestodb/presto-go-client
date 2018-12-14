@@ -267,11 +267,11 @@ func newConn(dsn string) (*Conn, error) {
 	}
 
 	for k, v := range map[string]string{
-		"X-Presto-User":    user,
-		"X-Presto-Source":  prestoQuery.Get("source"),
-		"X-Presto-Catalog": prestoQuery.Get("catalog"),
-		"X-Presto-Schema":  prestoQuery.Get("schema"),
-		"X-Presto-Session": prestoQuery.Get("session_properties"),
+		prestoUserHeader:    user,
+		prestoSourceHeader:  prestoQuery.Get("source"),
+		prestoCatalogHeader: prestoQuery.Get("catalog"),
+		prestoSchemaHeader:  prestoQuery.Get("schema"),
+		prestoSessionHeader: prestoQuery.Get("session_properties"),
 	} {
 		if v != "" {
 			c.httpHeaders.Add(k, v)
@@ -456,6 +456,7 @@ func newErrQueryFailedFromResponse(resp *http.Response) *ErrQueryFailed {
 type driverStmt struct {
 	conn  *Conn
 	query string
+	user  string
 }
 
 var (
@@ -546,6 +547,11 @@ func (st *driverStmt) Query(args []driver.Value) (driver.Rows, error) {
 const (
 	preparedStatementHeader = "X-Presto-Prepared-Statement"
 	preparedStatementName   = "_presto_go"
+	prestoUserHeader        = "X-Presto-User"
+	prestoSourceHeader      = "X-Presto-Source"
+	prestoCatalogHeader     = "X-Presto-Catalog"
+	prestoSchemaHeader      = "X-Presto-Schema"
+	prestoSessionHeader     = "X-Presto-Session"
 )
 
 func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
@@ -554,17 +560,23 @@ func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue
 
 	if len(args) > 0 {
 		hs = make(http.Header)
-		hs.Add(preparedStatementHeader, preparedStatementName+"="+url.QueryEscape(st.query))
-
-		ss := make([]string, len(args))
-		for i, arg := range args {
-			s, err := Serial(arg.Value)
-			if err != nil {
-				return nil, err
-			}
-			ss[i] = s
+		if args[0].Name == prestoUserHeader {
+			st.user = args[0].Value.(string)
+			hs.Add(prestoUserHeader, st.user)
 		}
-		query = "EXECUTE " + preparedStatementName + " USING " + strings.Join(ss, ", ")
+		headerArgs := args[1:]
+		if len(headerArgs) > 0 {
+			hs.Add(preparedStatementHeader, preparedStatementName+"="+url.QueryEscape(st.query))
+			ss := make([]string, len(headerArgs))
+			for i, arg := range headerArgs {
+				s, err := Serial(arg.Value)
+				if err != nil {
+					return nil, err
+				}
+				ss[i] = s
+			}
+			query = "EXECUTE " + preparedStatementName + " USING " + strings.Join(ss, ", ")
+		}
 	}
 
 	req, err := st.conn.newRequest("POST", st.conn.baseURL+"/v1/statement", strings.NewReader(query), hs)
@@ -588,6 +600,7 @@ func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue
 	}
 	rows := &driverRows{
 		ctx:     ctx,
+		user:    st.user,
 		conn:    st.conn,
 		nextURI: sr.NextURI,
 	}
@@ -599,6 +612,7 @@ func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue
 
 type driverRows struct {
 	ctx     context.Context
+	user    string
 	conn    *Conn
 	nextURI string
 
@@ -613,7 +627,9 @@ var _ driver.Rows = &driverRows{}
 
 func (qr *driverRows) Close() error {
 	if qr.nextURI != "" {
-		req, err := qr.conn.newRequest("DELETE", qr.nextURI, nil, nil)
+		hs := make(http.Header)
+		hs.Add(prestoUserHeader, qr.user)
+		req, err := qr.conn.newRequest("DELETE", qr.nextURI, nil, hs)
 		if err != nil {
 			return err
 		}
@@ -734,7 +750,9 @@ func handleResponseError(status int, respErr stmtError) error {
 }
 
 func (qr *driverRows) fetch(allowEOF bool) error {
-	req, err := qr.conn.newRequest("GET", qr.nextURI, nil, nil)
+	hs := make(http.Header)
+	hs.Add(prestoUserHeader, qr.user)
+	req, err := qr.conn.newRequest("GET", qr.nextURI, nil, hs)
 	if err != nil {
 		return err
 	}
