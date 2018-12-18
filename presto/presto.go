@@ -560,11 +560,14 @@ func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue
 
 	if len(args) > 0 {
 		hs = make(http.Header)
+		var headerArgs []driver.NamedValue
 		if args[0].Name == prestoUserHeader {
 			st.user = args[0].Value.(string)
 			hs.Add(prestoUserHeader, st.user)
+			headerArgs = args[1:]
+		} else {
+			headerArgs = args
 		}
-		headerArgs := args[1:]
 		if len(headerArgs) > 0 {
 			hs.Add(preparedStatementHeader, preparedStatementName+"="+url.QueryEscape(st.query))
 			ss := make([]string, len(headerArgs))
