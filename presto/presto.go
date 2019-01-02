@@ -96,6 +96,14 @@ var (
 )
 
 const (
+	preparedStatementHeader = "X-Presto-Prepared-Statement"
+	preparedStatementName   = "_presto_go"
+	prestoUserHeader        = "X-Presto-User"
+	prestoSourceHeader      = "X-Presto-Source"
+	prestoCatalogHeader     = "X-Presto-Catalog"
+	prestoSchemaHeader      = "X-Presto-Schema"
+	prestoSessionHeader     = "X-Presto-Session"
+
 	KerberosEnabledConfig    = "KerberosEnabled"
 	kerberosKeytabPathConfig = "KerberosKeytabPath"
 	kerberosPrincipalConfig  = "KerberosPrincipal"
@@ -544,42 +552,27 @@ func (st *driverStmt) Query(args []driver.Value) (driver.Rows, error) {
 	return nil, driver.ErrSkip
 }
 
-const (
-	preparedStatementHeader = "X-Presto-Prepared-Statement"
-	preparedStatementName   = "_presto_go"
-	prestoUserHeader        = "X-Presto-User"
-	prestoSourceHeader      = "X-Presto-Source"
-	prestoCatalogHeader     = "X-Presto-Catalog"
-	prestoSchemaHeader      = "X-Presto-Schema"
-	prestoSessionHeader     = "X-Presto-Session"
-)
-
 func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
 	query := st.query
 	var hs http.Header
 
 	if len(args) > 0 {
 		hs = make(http.Header)
-		var headerArgs []driver.NamedValue
-		if args[0].Name == prestoUserHeader {
-			st.user = args[0].Value.(string)
-			hs.Add(prestoUserHeader, st.user)
-			headerArgs = args[1:]
-		} else {
-			headerArgs = args
-		}
-		if len(headerArgs) > 0 {
-			hs.Add(preparedStatementHeader, preparedStatementName+"="+url.QueryEscape(st.query))
-			ss := make([]string, len(headerArgs))
-			for i, arg := range headerArgs {
-				s, err := Serial(arg.Value)
-				if err != nil {
-					return nil, err
-				}
-				ss[i] = s
+		var ss []string
+		for _, arg := range args {
+			s, err := Serial(arg.Value)
+			if err != nil {
+				return nil, err
 			}
-			query = "EXECUTE " + preparedStatementName + " USING " + strings.Join(ss, ", ")
+			if arg.Name == prestoUserHeader {
+				st.user = s
+				hs.Add(prestoUserHeader, st.user)
+			} else {
+				hs.Add(preparedStatementHeader, preparedStatementName+"="+url.QueryEscape(st.query))
+				ss = append(ss, s)
+			}
 		}
+		query = "EXECUTE " + preparedStatementName + " USING " + strings.Join(ss, ", ")
 	}
 
 	req, err := st.conn.newRequest("POST", st.conn.baseURL+"/v1/statement", strings.NewReader(query), hs)
@@ -603,8 +596,7 @@ func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue
 	}
 	rows := &driverRows{
 		ctx:     ctx,
-		user:    st.user,
-		conn:    st.conn,
+		stmt:    st,
 		nextURI: sr.NextURI,
 	}
 	if err = rows.fetch(false); err != nil {
@@ -615,8 +607,7 @@ func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue
 
 type driverRows struct {
 	ctx     context.Context
-	user    string
-	conn    *Conn
+	stmt    *driverStmt
 	nextURI string
 
 	err      error
@@ -631,8 +622,8 @@ var _ driver.Rows = &driverRows{}
 func (qr *driverRows) Close() error {
 	if qr.nextURI != "" {
 		hs := make(http.Header)
-		hs.Add(prestoUserHeader, qr.user)
-		req, err := qr.conn.newRequest("DELETE", qr.nextURI, nil, hs)
+		hs.Add(prestoUserHeader, qr.stmt.user)
+		req, err := qr.stmt.conn.newRequest("DELETE", qr.nextURI, nil, hs)
 		if err != nil {
 			return err
 		}
@@ -641,7 +632,7 @@ func (qr *driverRows) Close() error {
 			time.Now().Add(DefaultCancelQueryTimeout),
 		)
 		defer cancel()
-		resp, err := qr.conn.roundTrip(ctx, req)
+		resp, err := qr.stmt.conn.roundTrip(ctx, req)
 		if err != nil {
 			qferr, ok := err.(*ErrQueryFailed)
 			if ok && qferr.StatusCode == http.StatusNoContent {
@@ -754,12 +745,12 @@ func handleResponseError(status int, respErr stmtError) error {
 
 func (qr *driverRows) fetch(allowEOF bool) error {
 	hs := make(http.Header)
-	hs.Add(prestoUserHeader, qr.user)
-	req, err := qr.conn.newRequest("GET", qr.nextURI, nil, hs)
+	hs.Add(prestoUserHeader, qr.stmt.user)
+	req, err := qr.stmt.conn.newRequest("GET", qr.nextURI, nil, hs)
 	if err != nil {
 		return err
 	}
-	resp, err := qr.conn.roundTrip(qr.ctx, req)
+	resp, err := qr.stmt.conn.roundTrip(qr.ctx, req)
 	if err != nil {
 		return err
 	}
