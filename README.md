@@ -5,22 +5,12 @@ A [Presto](https://prestodb.io) client for the [Go](https://golang.org) programm
 [![Build Status](https://secure.travis-ci.org/prestodb/presto-go-client.png)](http://travis-ci.org/prestodb/presto-go-client)
 [![GoDoc](https://godoc.org/github.com/prestodb/presto-go-client?status.svg)](https://godoc.org/github.com/prestodb/presto-go-client)
 
--------------
-* [Features](#features)
-* [Requirements](#requirements)
-* [Installation](#installation)
-* [Usage](#usage)
-    * [DSN (Data Source Name)](#dsn-data-source-name)
-        * [Parameters](#parameters)
-        * [Examples](#examples)
-* [License](#license)
--------------
-
 ## Features
 
 * Native Go implementation
 * Connections over HTTP or HTTPS
-* Basic auth
+* HTTP Basic and Kerberos authentication
+* Per-query user information for access control
 * Support custom HTTP client (tunable conn pools, timeouts, TLS)
 * Supports conversion from Presto to native Go data types
   * `string`, `sql.NullString`
@@ -65,6 +55,36 @@ dsn := "http://user@localhost:8080?catalog=default&schema=test"
 db, err := sql.Open("presto", dsn)
 ```
 
+### Authentication
+
+Both HTTP Basic and Kerberos authentication are supported.
+
+#### HTTP Basic authentication
+
+If the DSN contains a password, the client enables HTTP Basic authentication by setting the `Authorization` header in every request to presto.
+
+HTTP Basic authentication **is only supported on encrypted connections over HTTPS**.
+
+#### Kerberos authentication
+
+This driver supports Kerberos authentication by setting up the Kerberos fields in the [Config](https://godoc.org/github.com/prestodb/presto-go-client/presto#Config) struct.
+
+Please refer to the [Coordinator Kerberos Authentication](https://prestodb.io/docs/current/security/server.html) for server-side configuration.
+
+#### System access control and per-query user information
+
+It's possible to pass user information to presto, different from the principal used to authenticate to the coordinator. See the [System Access Control](https://prestodb.io/docs/current/develop/system-access-control.html) documentation for details.
+
+In order to pass user information in queries to presto, you have to add a [NamedArg](https://godoc.org/database/sql#NamedArg) to the query parameters where the key is X-Presto-User. This parameter is used by the driver to inform presto about the user executing the query regardless of the authentication method for the actual connection, and its value is NOT passed to the query.
+
+Example:
+
+```go
+db.Query("SELECT * FROM foobar WHERE id=?", 1, sql.Named("X-Presto-User", string("Alice")))
+```
+
+The position of the X-Presto-User NamedArg is irrelevant and does not affect the query in any way.
+
 ### DSN (Data Source Name)
 
 The Data Source Name is a URL with a mandatory username, and optional query string parameters that are supported by this driver, in the following format:
@@ -76,12 +96,6 @@ http[s]://user[:pass]@host[:port][?parameters]
 The easiest way to build your DSN is by using the [Config.FormatDSN](https://godoc.org/github.com/prestodb/presto-go-client/presto#Config.FormatDSN) helper function.
 
 The driver supports both HTTP and HTTPS. If you use HTTPS it's recommended that you also provide a custom `http.Client` that can validate (or skip) the security checks of the server certificate, and/or to configure TLS client authentication.
-
-#### HTTP Basic authentication
-
-If the DSN contains a password, the client enables HTTP Basic authentication by setting the `Authorization` header in every request to presto.
-
-HTTP Basic authentication **is only supported on encrypted connections over HTTPS**.
 
 #### Parameters
 
