@@ -568,7 +568,9 @@ func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue
 				st.user = s
 				hs.Add(prestoUserHeader, st.user)
 			} else {
-				hs.Add(preparedStatementHeader, preparedStatementName+"="+url.QueryEscape(st.query))
+				if hs.Get(preparedStatementHeader) == "" {
+					hs.Add(preparedStatementHeader, preparedStatementName+"="+url.QueryEscape(st.query))
+				}
 				ss = append(ss, s)
 			}
 		}
