@@ -1306,7 +1306,7 @@ func parseNullTime(v string) (NullTime, error) {
 	var t time.Time
 	var err error
 	for _, layout := range timeLayouts {
-		t, err = time.Parse(layout, v)
+		t, err = time.ParseInLocation(layout, v, time.Local)
 		if err == nil {
 			return NullTime{Valid: true, Time: t}, nil
 		}
