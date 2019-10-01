@@ -588,7 +588,9 @@ func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue
 	}
 	defer resp.Body.Close()
 	var sr stmtResponse
-	err = json.NewDecoder(resp.Body).Decode(&sr)
+	d := json.NewDecoder(resp.Body)
+	d.UseNumber()
+	err = d.Decode(&sr)
 	if err != nil {
 		return nil, fmt.Errorf("presto: %v", err)
 	}
@@ -758,7 +760,9 @@ func (qr *driverRows) fetch(allowEOF bool) error {
 	}
 	defer resp.Body.Close()
 	var qresp queryResponse
-	err = json.NewDecoder(resp.Body).Decode(&qresp)
+	d := json.NewDecoder(resp.Body)
+	d.UseNumber()
+	err = d.Decode(&qresp)
 	if err != nil {
 		return fmt.Errorf("presto: %v", err)
 	}
@@ -1085,12 +1089,17 @@ func scanNullInt64(v interface{}) (sql.NullInt64, error) {
 	if v == nil {
 		return sql.NullInt64{}, nil
 	}
-	vv, ok := v.(float64)
+	vNumber, ok := v.(json.Number)
 	if !ok {
 		return sql.NullInt64{},
 			fmt.Errorf("cannot convert %v (%T) to int64", v, v)
 	}
-	return sql.NullInt64{Valid: true, Int64: int64(vv)}, nil
+	vv, err := vNumber.Int64()
+	if err != nil {
+		return sql.NullInt64{},
+			fmt.Errorf("cannot convert %v (%T) to int64", v, v)
+	}
+	return sql.NullInt64{Valid: true, Int64: vv}, nil
 }
 
 // NullSliceInt64 represents a slice of int64 that may be null.
@@ -1181,9 +1190,13 @@ func scanNullFloat64(v interface{}) (sql.NullFloat64, error) {
 	if v == nil {
 		return sql.NullFloat64{}, nil
 	}
-	vv, ok := v.(float64)
+	vNumber, ok := v.(json.Number)
 	if ok {
-		return sql.NullFloat64{Valid: true, Float64: vv}, nil
+		vFloat, err := vNumber.Float64()
+		if err != nil {
+			return sql.NullFloat64{}, fmt.Errorf("cannot convert %v (%T) to float64", vNumber, vNumber)
+		}
+		return sql.NullFloat64{Valid: true, Float64: vFloat}, nil
 	}
 	switch v {
 	case "NaN":
