@@ -252,12 +252,12 @@ func TestTypeConversion(t *testing.T) {
 		},
 		{
 			PrestoType:                       "bigint",
-			PrestoResponseUnmarshalledSample: float64(1),
-			ExpectedGoValue:                  int64(1),
+			PrestoResponseUnmarshalledSample: json.Number("1234516165077230279"),
+			ExpectedGoValue:                  int64(1234516165077230279),
 		},
 		{
 			PrestoType:                       "double",
-			PrestoResponseUnmarshalledSample: float64(1),
+			PrestoResponseUnmarshalledSample: json.Number("1.0"),
 			ExpectedGoValue:                  float64(1),
 		},
 		{
@@ -331,8 +331,8 @@ func TestSliceTypeConversion(t *testing.T) {
 		TestScanner                      func(t *testing.T, s sql.Scanner)
 	}{
 		{
-			GoType:  "[]bool",
-			Scanner: &NullSliceBool{},
+			GoType:                           "[]bool",
+			Scanner:                          &NullSliceBool{},
 			PrestoResponseUnmarshalledSample: []interface{}{true},
 			TestScanner: func(t *testing.T, s sql.Scanner) {
 				v, _ := s.(*NullSliceBool)
@@ -342,8 +342,8 @@ func TestSliceTypeConversion(t *testing.T) {
 			},
 		},
 		{
-			GoType:  "[]string",
-			Scanner: &NullSliceString{},
+			GoType:                           "[]string",
+			Scanner:                          &NullSliceString{},
 			PrestoResponseUnmarshalledSample: []interface{}{"hello"},
 			TestScanner: func(t *testing.T, s sql.Scanner) {
 				v, _ := s.(*NullSliceString)
@@ -353,9 +353,9 @@ func TestSliceTypeConversion(t *testing.T) {
 			},
 		},
 		{
-			GoType:  "[]int64",
-			Scanner: &NullSliceInt64{},
-			PrestoResponseUnmarshalledSample: []interface{}{float64(1)},
+			GoType:                           "[]int64",
+			Scanner:                          &NullSliceInt64{},
+			PrestoResponseUnmarshalledSample: []interface{}{json.Number("1")},
 			TestScanner: func(t *testing.T, s sql.Scanner) {
 				v, _ := s.(*NullSliceInt64)
 				if !v.Valid {
@@ -365,9 +365,9 @@ func TestSliceTypeConversion(t *testing.T) {
 		},
 
 		{
-			GoType:  "[]float64",
-			Scanner: &NullSliceFloat64{},
-			PrestoResponseUnmarshalledSample: []interface{}{float64(1)},
+			GoType:                           "[]float64",
+			Scanner:                          &NullSliceFloat64{},
+			PrestoResponseUnmarshalledSample: []interface{}{json.Number("1.0")},
 			TestScanner: func(t *testing.T, s sql.Scanner) {
 				v, _ := s.(*NullSliceFloat64)
 				if !v.Valid {
@@ -376,8 +376,8 @@ func TestSliceTypeConversion(t *testing.T) {
 			},
 		},
 		{
-			GoType:  "[]time.Time",
-			Scanner: &NullSliceTime{},
+			GoType:                           "[]time.Time",
+			Scanner:                          &NullSliceTime{},
 			PrestoResponseUnmarshalledSample: []interface{}{"2017-07-01"},
 			TestScanner: func(t *testing.T, s sql.Scanner) {
 				v, _ := s.(*NullSliceTime)
@@ -387,8 +387,8 @@ func TestSliceTypeConversion(t *testing.T) {
 			},
 		},
 		{
-			GoType:  "[]map[string]interface{}",
-			Scanner: &NullSliceMap{},
+			GoType:                           "[]map[string]interface{}",
+			Scanner:                          &NullSliceMap{},
 			PrestoResponseUnmarshalledSample: []interface{}{map[string]interface{}{"hello": "world"}},
 			TestScanner: func(t *testing.T, s sql.Scanner) {
 				v, _ := s.(*NullSliceMap)
@@ -431,8 +431,8 @@ func TestSlice2TypeConversion(t *testing.T) {
 		TestScanner                      func(t *testing.T, s sql.Scanner)
 	}{
 		{
-			GoType:  "[][]bool",
-			Scanner: &NullSlice2Bool{},
+			GoType:                           "[][]bool",
+			Scanner:                          &NullSlice2Bool{},
 			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{true}},
 			TestScanner: func(t *testing.T, s sql.Scanner) {
 				v, _ := s.(*NullSlice2Bool)
@@ -442,8 +442,8 @@ func TestSlice2TypeConversion(t *testing.T) {
 			},
 		},
 		{
-			GoType:  "[][]string",
-			Scanner: &NullSlice2String{},
+			GoType:                           "[][]string",
+			Scanner:                          &NullSlice2String{},
 			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{"hello"}},
 			TestScanner: func(t *testing.T, s sql.Scanner) {
 				v, _ := s.(*NullSlice2String)
@@ -453,9 +453,9 @@ func TestSlice2TypeConversion(t *testing.T) {
 			},
 		},
 		{
-			GoType:  "[][]int64",
-			Scanner: &NullSlice2Int64{},
-			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{float64(1)}},
+			GoType:                           "[][]int64",
+			Scanner:                          &NullSlice2Int64{},
+			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{json.Number("1")}},
 			TestScanner: func(t *testing.T, s sql.Scanner) {
 				v, _ := s.(*NullSlice2Int64)
 				if !v.Valid {
@@ -464,9 +464,9 @@ func TestSlice2TypeConversion(t *testing.T) {
 			},
 		},
 		{
-			GoType:  "[][]float64",
-			Scanner: &NullSlice2Float64{},
-			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{float64(1)}},
+			GoType:                           "[][]float64",
+			Scanner:                          &NullSlice2Float64{},
+			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{json.Number("1.0")}},
 			TestScanner: func(t *testing.T, s sql.Scanner) {
 				v, _ := s.(*NullSlice2Float64)
 				if !v.Valid {
@@ -475,8 +475,8 @@ func TestSlice2TypeConversion(t *testing.T) {
 			},
 		},
 		{
-			GoType:  "[][]time.Time",
-			Scanner: &NullSlice2Time{},
+			GoType:                           "[][]time.Time",
+			Scanner:                          &NullSlice2Time{},
 			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{"2017-07-01"}},
 			TestScanner: func(t *testing.T, s sql.Scanner) {
 				v, _ := s.(*NullSlice2Time)
@@ -486,8 +486,8 @@ func TestSlice2TypeConversion(t *testing.T) {
 			},
 		},
 		{
-			GoType:  "[][]map[string]interface{}",
-			Scanner: &NullSlice2Map{},
+			GoType:                           "[][]map[string]interface{}",
+			Scanner:                          &NullSlice2Map{},
 			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{map[string]interface{}{"hello": "world"}}},
 			TestScanner: func(t *testing.T, s sql.Scanner) {
 				v, _ := s.(*NullSlice2Map)
@@ -536,8 +536,8 @@ func TestSlice3TypeConversion(t *testing.T) {
 		TestScanner                      func(t *testing.T, s sql.Scanner)
 	}{
 		{
-			GoType:  "[][][]bool",
-			Scanner: &NullSlice3Bool{},
+			GoType:                           "[][][]bool",
+			Scanner:                          &NullSlice3Bool{},
 			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{[]interface{}{true}}},
 			TestScanner: func(t *testing.T, s sql.Scanner) {
 				v, _ := s.(*NullSlice3Bool)
@@ -547,8 +547,8 @@ func TestSlice3TypeConversion(t *testing.T) {
 			},
 		},
 		{
-			GoType:  "[][][]string",
-			Scanner: &NullSlice3String{},
+			GoType:                           "[][][]string",
+			Scanner:                          &NullSlice3String{},
 			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{[]interface{}{"hello"}}},
 			TestScanner: func(t *testing.T, s sql.Scanner) {
 				v, _ := s.(*NullSlice3String)
@@ -558,9 +558,9 @@ func TestSlice3TypeConversion(t *testing.T) {
 			},
 		},
 		{
-			GoType:  "[][][]int64",
-			Scanner: &NullSlice3Int64{},
-			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{[]interface{}{float64(1)}}},
+			GoType:                           "[][][]int64",
+			Scanner:                          &NullSlice3Int64{},
+			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{[]interface{}{json.Number("1")}}},
 			TestScanner: func(t *testing.T, s sql.Scanner) {
 				v, _ := s.(*NullSlice3Int64)
 				if !v.Valid {
@@ -569,9 +569,9 @@ func TestSlice3TypeConversion(t *testing.T) {
 			},
 		},
 		{
-			GoType:  "[][][]float64",
-			Scanner: &NullSlice3Float64{},
-			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{[]interface{}{float64(1)}}},
+			GoType:                           "[][][]float64",
+			Scanner:                          &NullSlice3Float64{},
+			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{[]interface{}{json.Number("1.0")}}},
 			TestScanner: func(t *testing.T, s sql.Scanner) {
 				v, _ := s.(*NullSlice3Float64)
 				if !v.Valid {
@@ -580,8 +580,8 @@ func TestSlice3TypeConversion(t *testing.T) {
 			},
 		},
 		{
-			GoType:  "[][][]time.Time",
-			Scanner: &NullSlice3Time{},
+			GoType:                           "[][][]time.Time",
+			Scanner:                          &NullSlice3Time{},
 			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{[]interface{}{"2017-07-01"}}},
 			TestScanner: func(t *testing.T, s sql.Scanner) {
 				v, _ := s.(*NullSlice3Time)
@@ -591,8 +591,8 @@ func TestSlice3TypeConversion(t *testing.T) {
 			},
 		},
 		{
-			GoType:  "[][][]map[string]interface{}",
-			Scanner: &NullSlice3Map{},
+			GoType:                           "[][][]map[string]interface{}",
+			Scanner:                          &NullSlice3Map{},
 			PrestoResponseUnmarshalledSample: []interface{}{[]interface{}{[]interface{}{map[string]interface{}{"hello": "world"}}}},
 			TestScanner: func(t *testing.T, s sql.Scanner) {
 				v, _ := s.(*NullSlice3Map)
