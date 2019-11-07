@@ -158,7 +158,7 @@ func (c *Config) FormatDSN() (string, error) {
 	KerberosEnabled, _ := strconv.ParseBool(c.KerberosEnabled)
 	isSSL := prestoURL.Scheme == "https"
 
-	if isSSL {
+	if isSSL && c.SSLCertPath != "" {
 		query.Add(SSLCertPathConfig, c.SSLCertPath)
 	}
 
@@ -240,8 +240,8 @@ func newConn(dsn string) (*Conn, error) {
 		if httpClient == nil {
 			return nil, fmt.Errorf("presto: custom client not registered: %q", clientKey)
 		}
-	} else if prestoURL.Scheme == "https" {
-		cert, err := ioutil.ReadFile(prestoQuery.Get(SSLCertPathConfig))
+	} else if certPath := prestoQuery.Get(SSLCertPathConfig); certPath != "" && prestoURL.Scheme == "https" {
+		cert, err := ioutil.ReadFile(certPath)
 		if err != nil {
 			return nil, fmt.Errorf("presto: Error loading SSL Cert File: %v", err)
 		}

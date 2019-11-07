@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -36,6 +37,37 @@ func TestConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "http://foobar@localhost:8080?session_properties=query_priority%3D1&source=presto-go-client"
+	if dsn != want {
+		t.Fatal("unexpected dsn:", dsn)
+	}
+}
+
+func TestConfigSSLCertPath(t *testing.T) {
+	c := &Config{
+		PrestoURI:         "https://foobar@localhost:8080",
+		SessionProperties: map[string]string{"query_priority": "1"},
+		SSLCertPath:       "cert.pem",
+	}
+	dsn, err := c.FormatDSN()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "https://foobar@localhost:8080?SSLCertPath=cert.pem&session_properties=query_priority%3D1&source=presto-go-client"
+	if dsn != want {
+		t.Fatal("unexpected dsn:", dsn)
+	}
+}
+
+func TestConfigWithoutSSLCertPath(t *testing.T) {
+	c := &Config{
+		PrestoURI:         "https://foobar@localhost:8080",
+		SessionProperties: map[string]string{"query_priority": "1"},
+	}
+	dsn, err := c.FormatDSN()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "https://foobar@localhost:8080?session_properties=query_priority%3D1&source=presto-go-client"
 	if dsn != want {
 		t.Fatal("unexpected dsn:", dsn)
 	}
@@ -205,6 +237,33 @@ func TestQueryFailure(t *testing.T) {
 	_, err = db.Query("SELECT 1")
 	if _, ok := err.(*ErrQueryFailed); !ok {
 		t.Fatal("unexpected error:", err)
+	}
+}
+
+func TestSSLCertPath(t *testing.T) {
+	db, err := sql.Open("presto", "https://localhost:9?SSLCertPath=/tmp/invalid_test.cert")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	want := "Error loading SSL Cert File"
+	if err := db.Ping(); err == nil {
+		t.Fatal(err)
+	} else if !strings.Contains(err.Error(), want) {
+		t.Fatalf("want: %q, got: %v", want, err)
+	}
+}
+
+func TestWithoutSSLCertPath(t *testing.T) {
+	db, err := sql.Open("presto", "https://localhost:9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.Ping(); err != nil {
+		t.Fatal(err)
 	}
 }
 
