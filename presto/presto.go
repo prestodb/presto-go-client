@@ -99,6 +99,7 @@ const (
 	preparedStatementHeader = "X-Presto-Prepared-Statement"
 	preparedStatementName   = "_presto_go"
 	prestoUserHeader        = "X-Presto-User"
+	prestoPassword          = "X-Presto-Password"
 	prestoSourceHeader      = "X-Presto-Source"
 	prestoCatalogHeader     = "X-Presto-Catalog"
 	prestoSchemaHeader      = "X-Presto-Schema"
@@ -265,10 +266,10 @@ func newConn(dsn string) (*Conn, error) {
 		kerberosEnabled: kerberosEnabled,
 	}
 
-	var user string
+	var user, pass string
 	if prestoURL.User != nil {
 		user = prestoURL.User.Username()
-		pass, _ := prestoURL.User.Password()
+		pass, _ = prestoURL.User.Password()
 		if pass != "" && prestoURL.Scheme == "https" {
 			c.auth = prestoURL.User
 		}
@@ -276,6 +277,7 @@ func newConn(dsn string) (*Conn, error) {
 
 	for k, v := range map[string]string{
 		prestoUserHeader:    user,
+		prestoPassword:      pass,
 		prestoSourceHeader:  prestoQuery.Get("source"),
 		prestoCatalogHeader: prestoQuery.Get("catalog"),
 		prestoSchemaHeader:  prestoQuery.Get("schema"),
