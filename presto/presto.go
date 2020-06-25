@@ -869,8 +869,68 @@ func (c *typeConverter) ConvertValue(v interface{}) (driver.Value, error) {
 		}
 		return v, nil
 	default:
+		if strings.HasPrefix(c.typeName, "row(") {
+			values, ok := v.([]interface{})
+			if !ok {
+				return nil, fmt.Errorf("can't convert type to row: %q", c.typeName)
+			}
+
+			rowItems := parseRowItems(c.typeName)
+			if len(rowItems) != len(values) {
+				return nil, fmt.Errorf("there should be as many types as there are values")
+			}
+
+			m := map[string]driver.Value{}
+
+			for pos, item := range rowItems {
+				converter := newTypeConverter(item.typeName)
+				value, err := converter.ConvertValue(values[pos])
+				if err != nil {
+					fmt.Printf("Error converting value of %s: %s\n", item.name, err.Error())
+				} else {
+					m[item.name] = value
+					fmt.Printf("type passed %s\n", item.typeName)
+				}
+			}
+			return m, nil
+		}
 		return nil, fmt.Errorf("type not supported: %q", c.typeName)
 	}
+}
+
+type rowItem struct {
+	name     string
+	typeName string
+}
+
+func parseRowItems(rowTypeName string) []rowItem {
+	typeName := strings.TrimSuffix(strings.TrimPrefix(rowTypeName, "row("), ")")
+	rowTypes := make([]rowItem, 0)
+	nestLevel := 0
+	lastSplit := 0
+	for pos, char := range typeName {
+		if char == ',' && nestLevel == 0 {
+			rowTypes = append(rowTypes, newRowItem(typeName[lastSplit:pos]))
+			lastSplit = pos
+		} else if char == '(' {
+			nestLevel++
+		} else if char == ')' {
+			nestLevel--
+		}
+	}
+	rowTypes = append(rowTypes, newRowItem(typeName[lastSplit:]))
+	return rowTypes
+}
+
+func newRowItem(rowType string) rowItem {
+	cleansed := strings.TrimPrefix(rowType, ", ")
+	splitBySpace := strings.SplitN(cleansed, " ", 2)
+	if len(splitBySpace) == 1 {
+		return rowItem{name: splitBySpace[0], typeName: ""}
+	} else if len(splitBySpace) >= 2 {
+		return rowItem{name: splitBySpace[0], typeName: splitBySpace[1]}
+	}
+	return rowItem{name: "", typeName: ""}
 }
 
 func validateMap(v interface{}) error {
