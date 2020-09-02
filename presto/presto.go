@@ -568,15 +568,16 @@ func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue
 				st.user = s
 				hs.Add(prestoUserHeader, st.user)
 			} else {
-				if hs.Get(preparedStatementHeader) == "" {
-					hs.Add(preparedStatementHeader, preparedStatementName+"="+url.QueryEscape(st.query))
-				}
 				ss = append(ss, s)
 			}
 		}
-		query = "EXECUTE " + preparedStatementName + " USING " + strings.Join(ss, ", ")
+		if len(ss) > 0 {
+			if hs.Get(preparedStatementHeader) == "" {
+				hs.Add(preparedStatementHeader, preparedStatementName+"="+url.QueryEscape(st.query))
+			}
+			query = "EXECUTE " + preparedStatementName + " USING " + strings.Join(ss, ", ")
+		}
 	}
-
 	req, err := st.conn.newRequest("POST", st.conn.baseURL+"/v1/statement", strings.NewReader(query), hs)
 	if err != nil {
 		return nil, err
