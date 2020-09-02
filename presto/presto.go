@@ -603,6 +603,19 @@ func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue
 		stmt:    st,
 		nextURI: sr.NextURI,
 	}
+	completedChannel := make(chan struct{})
+	defer close(completedChannel)
+	go func() {
+		select {
+		case <-ctx.Done():
+			err := rows.Close()
+			if err != nil {
+				return
+			}
+		case <-completedChannel:
+			return
+		}
+	}()
 	if err = rows.fetch(false); err != nil {
 		return nil, err
 	}

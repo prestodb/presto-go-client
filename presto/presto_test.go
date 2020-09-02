@@ -191,6 +191,51 @@ func TestRoundTripCancellation(t *testing.T) {
 	}
 }
 
+func TestQueryContextCancellation(t *testing.T) {
+	var qr = queryResponse{
+		NextURI: "",
+		Columns: []queryColumn{},
+		Data: []queryData{},
+		Stats: stmtStats{
+			State: "RUNNING",
+		},
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(&qr)
+	}))
+	qr.NextURI = ts.URL
+	defer ts.Close()
+	db, err := sql.Open("presto", ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	errChannel := make(chan error)
+	done := make(chan bool)
+	go func() {
+		_, err := db.QueryContext(ctx, "SELECT 1")
+		if err != nil {
+			errChannel <- err
+		} else {
+			close(done)
+		}
+	}()
+	cancel()
+	var err1 error
+	select {
+	case <-done:
+		t.Fatal("unexpected query with cancelled context succeeded")
+		break
+	case err1 = <-errChannel:
+		close(errChannel)
+		if err1.Error() != "context canceled" {
+			t.Fatal("query should have been cancelled with error message context cancelled")
+		}
+	}
+}
+
 func TestAuthFailure(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
