@@ -827,7 +827,7 @@ func parseType(name string) []string {
 
 // ConvertValue implements the driver.ValueConverter interface.
 func (c *typeConverter) ConvertValue(v interface{}) (driver.Value, error) {
-	switch c.parsedType[0] {
+	switch strings.ToLower(c.parsedType[0]) {
 	case "boolean":
 		vv, err := scanNullBool(v)
 		if !vv.Valid {
