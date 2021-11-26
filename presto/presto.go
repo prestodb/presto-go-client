@@ -203,6 +203,7 @@ type Conn struct {
 var (
 	_ driver.Conn               = &Conn{}
 	_ driver.ConnPrepareContext = &Conn{}
+	_ driver.ConnBeginTx        = &Conn{}
 )
 
 func newConn(dsn string) (*Conn, error) {
