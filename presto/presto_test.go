@@ -323,17 +323,6 @@ func TestUnsupportedExec(t *testing.T) {
 	}
 }
 
-func TestUnsupportedTransaction(t *testing.T) {
-	db, err := sql.Open("presto", "http://localhost:9")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if _, err := db.Begin(); err == nil {
-		t.Fatal("unsupported transaction succeeded with no error")
-	}
-}
-
 func TestTypeConversion(t *testing.T) {
 	utc, err := time.LoadLocation("UTC")
 	if err != nil {
