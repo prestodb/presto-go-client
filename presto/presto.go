@@ -96,13 +96,16 @@ var (
 )
 
 const (
-	preparedStatementHeader = "X-Presto-Prepared-Statement"
-	preparedStatementName   = "_presto_go"
-	prestoUserHeader        = "X-Presto-User"
-	prestoSourceHeader      = "X-Presto-Source"
-	prestoCatalogHeader     = "X-Presto-Catalog"
-	prestoSchemaHeader      = "X-Presto-Schema"
-	prestoSessionHeader     = "X-Presto-Session"
+	preparedStatementHeader        = "X-Presto-Prepared-Statement"
+	preparedStatementName          = "_presto_go"
+	prestoUserHeader               = "X-Presto-User"
+	prestoSourceHeader             = "X-Presto-Source"
+	prestoCatalogHeader            = "X-Presto-Catalog"
+	prestoSchemaHeader             = "X-Presto-Schema"
+	prestoSessionHeader            = "X-Presto-Session"
+	prestoTransactionHeader        = "X-Presto-Transaction-Id"
+	prestoStartedTransactionHeader = "X-Presto-Started-Transaction-Id"
+	prestoClearTransactionHeader   = "X-Presto-Clear-Transaction-Id"
 
 	KerberosEnabledConfig    = "KerberosEnabled"
 	kerberosKeytabPathConfig = "KerberosKeytabPath"
@@ -200,6 +203,7 @@ type Conn struct {
 var (
 	_ driver.Conn               = &Conn{}
 	_ driver.ConnPrepareContext = &Conn{}
+	_ driver.ConnBeginTx        = &Conn{}
 )
 
 func newConn(dsn string) (*Conn, error) {
@@ -352,6 +356,33 @@ func (c *Conn) Begin() (driver.Tx, error) {
 	return nil, ErrOperationNotSupported
 }
 
+func (c *Conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
+	args := []string{}
+	if opts.ReadOnly {
+		args = append(args, "READ ONLY")
+	}
+
+	level := sql.IsolationLevel(opts.Isolation)
+	if level != sql.LevelDefault {
+		err := verifyIsolationLevel(level)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, fmt.Sprintf("ISOLATION LEVEL %s", level.String()))
+	}
+
+	query := fmt.Sprintf("START TRANSACTION %s", strings.Join(args, ", "))
+	c.httpHeaders.Set(prestoTransactionHeader, "NONE")
+	stmt := &driverStmt{conn: c, query: query}
+	_, err := stmt.QueryContext(ctx, []driver.NamedValue{})
+	if err != nil {
+		c.httpHeaders.Del(prestoTransactionHeader)
+		return nil, err
+	}
+
+	return &driverTx{conn: c}, nil
+}
+
 // Prepare implements the driver.Conn interface.
 func (c *Conn) Prepare(query string) (driver.Stmt, error) {
 	return nil, driver.ErrSkip
@@ -416,6 +447,12 @@ func (c *Conn) roundTrip(ctx context.Context, req *http.Request) (*http.Response
 			}
 			switch resp.StatusCode {
 			case http.StatusOK:
+				if id := resp.Header.Get(prestoStartedTransactionHeader); id != "" {
+					c.httpHeaders.Set(prestoTransactionHeader, id)
+				} else if resp.Header.Get(prestoClearTransactionHeader) == "true" {
+					c.httpHeaders.Del(prestoTransactionHeader)
+				}
+
 				return resp, nil
 			case http.StatusServiceUnavailable:
 				resp.Body.Close()
