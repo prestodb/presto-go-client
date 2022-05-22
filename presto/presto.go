@@ -106,6 +106,8 @@ const (
 	prestoTransactionHeader        = "X-Presto-Transaction-Id"
 	prestoStartedTransactionHeader = "X-Presto-Started-Transaction-Id"
 	prestoClearTransactionHeader   = "X-Presto-Clear-Transaction-Id"
+	prestoClientTagsHeader         = "X-Presto-Client-Tags"
+	prestoClientInfoHeader         = "X-Presto-Client-Info"
 
 	KerberosEnabledConfig    = "KerberosEnabled"
 	kerberosKeytabPathConfig = "KerberosKeytabPath"
@@ -585,6 +587,16 @@ type stmtStage struct {
 	SubStages       []stmtStage `json:"subStages"`
 }
 
+// ErrQueryId indicates that a query is success, only for give QueryId.
+type ErrQueryId struct {
+	QueryId string
+}
+
+// Error implements the error interface.
+func (e *ErrQueryId) Error() string {
+	return e.QueryId
+}
+
 func (st *driverStmt) Query(args []driver.Value) (driver.Rows, error) {
 	return nil, driver.ErrSkip
 }
@@ -604,14 +616,21 @@ func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue
 			if arg.Name == prestoUserHeader {
 				st.user = s
 				hs.Add(prestoUserHeader, st.user)
+			} else if arg.Name == prestoClientTagsHeader {
+				hs.Add(prestoClientTagsHeader, s)
+			} else if arg.Name == prestoClientInfoHeader {
+				hs.Add(prestoClientInfoHeader, s)
 			} else {
-				if hs.Get(preparedStatementHeader) == "" {
-					hs.Add(preparedStatementHeader, preparedStatementName+"="+url.QueryEscape(st.query))
-				}
 				ss = append(ss, s)
 			}
 		}
-		query = "EXECUTE " + preparedStatementName + " USING " + strings.Join(ss, ", ")
+
+		if len(ss) > 0 {
+			if hs.Get(preparedStatementHeader) == "" {
+				hs.Add(preparedStatementHeader, preparedStatementName+"="+url.QueryEscape(st.query))
+			}
+			query = "EXECUTE " + preparedStatementName + " USING " + strings.Join(ss, ", ")
+		}
 	}
 
 	req, err := st.conn.newRequest("POST", st.conn.baseURL+"/v1/statement", strings.NewReader(query), hs)
@@ -639,6 +658,7 @@ func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue
 		ctx:     ctx,
 		stmt:    st,
 		nextURI: sr.NextURI,
+		id: sr.ID,
 	}
 	completedChannel := make(chan struct{})
 	defer close(completedChannel)
@@ -663,6 +683,7 @@ type driverRows struct {
 	ctx     context.Context
 	stmt    *driverStmt
 	nextURI string
+	id      string
 
 	err      error
 	rowindex int
@@ -730,11 +751,12 @@ func (qr *driverRows) Next(dest []driver.Value) error {
 	if qr.columns == nil || qr.rowindex >= len(qr.data) {
 		if qr.nextURI == "" {
 			qr.err = io.EOF
-			return qr.err
 		}
 		if err := qr.fetch(true); err != nil {
 			qr.err = err
-			return err
+		}
+		if qr.err == io.EOF {
+			return &ErrQueryId{QueryId: qr.id}
 		}
 	}
 	if len(qr.coltype) == 0 {
