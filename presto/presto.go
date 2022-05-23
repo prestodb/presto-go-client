@@ -587,14 +587,14 @@ type stmtStage struct {
 	SubStages       []stmtStage `json:"subStages"`
 }
 
-// ErrQueryId indicates that a query is success, only for give QueryId.
-type ErrQueryId struct {
-	QueryId string
+// EOF indicates that a query is success, only for give QueryID.
+type EOF struct {
+	QueryID string
 }
 
 // Error implements the error interface.
-func (e *ErrQueryId) Error() string {
-	return e.QueryId
+func (e *EOF) Error() string {
+	return e.QueryID
 }
 
 func (st *driverStmt) Query(args []driver.Value) (driver.Rows, error) {
@@ -756,7 +756,7 @@ func (qr *driverRows) Next(dest []driver.Value) error {
 			qr.err = err
 		}
 		if qr.err == io.EOF {
-			return &ErrQueryId{QueryId: qr.id}
+			return &EOF{QueryID: qr.id}
 		}
 	}
 	if len(qr.coltype) == 0 {

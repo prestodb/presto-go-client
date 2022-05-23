@@ -738,8 +738,6 @@ func TestNamedArgAndQueryId(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var e *ErrQueryId
-
 	var testId string
 	for rows.Next() {
 		err := rows.Scan(&testId)
@@ -748,7 +746,8 @@ func TestNamedArgAndQueryId(t *testing.T) {
 		}
 	}
 
+	var e *EOF
 	if errors.As(rows.Err(), &e) {
-		t.Logf("sucess to get query ID: %s", e.QueryId)
+		t.Logf("sucess to get query ID: %s", e.QueryID)
 	}
 }
