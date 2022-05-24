@@ -587,7 +587,7 @@ type stmtStage struct {
 	SubStages       []stmtStage `json:"subStages"`
 }
 
-// EOF indicates that a query is success, only for give QueryID.
+// EOF indicates the server has returned io.EOF for the given QueryID.
 type EOF struct {
 	QueryID string
 }
