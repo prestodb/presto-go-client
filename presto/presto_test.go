@@ -18,6 +18,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -195,7 +196,7 @@ func TestQueryContextCancellation(t *testing.T) {
 	var qr = queryResponse{
 		NextURI: "",
 		Columns: []queryColumn{},
-		Data: []queryData{},
+		Data:    []queryData{},
 		Stats: stmtStats{
 			State: "RUNNING",
 		},
@@ -723,5 +724,30 @@ func TestSlice3TypeConversion(t *testing.T) {
 			}
 			tc.TestScanner(t, tc.Scanner)
 		})
+	}
+}
+func TestNamedArgAndQueryId(t *testing.T) {
+	db, err := sql.Open("presto", "http://localhost:9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	rows, err := db.Query("select 1 ", sql.Named("X-Presto-Client-Tags", "userName=root"), sql.Named("X-Presto-Client-Info", "{\"submitTime\":\"2022-05-223 10:22:03\",\"userName\":\"root\"}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var testId string
+	for rows.Next() {
+		err := rows.Scan(&testId)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var e *EOF
+	if errors.As(rows.Err(), &e) {
+		t.Logf("sucess to get query ID: %s", e.QueryID)
 	}
 }
