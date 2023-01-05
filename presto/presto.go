@@ -751,12 +751,13 @@ func (qr *driverRows) Next(dest []driver.Value) error {
 	if qr.columns == nil || qr.rowindex >= len(qr.data) {
 		if qr.nextURI == "" {
 			qr.err = io.EOF
+			return &EOF{QueryID: qr.id}
 		}
 		if err := qr.fetch(true); err != nil {
 			qr.err = err
-		}
-		if qr.err == io.EOF {
-			return &EOF{QueryID: qr.id}
+			if qr.err == io.EOF {
+				return &EOF{QueryID: qr.id}
+			}
 		}
 	}
 	if len(qr.coltype) == 0 {
