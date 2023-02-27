@@ -43,12 +43,11 @@
 //
 // The driver should be used via the database/sql package:
 //
-//  import "database/sql"
-//  import _ "github.com/prestodb/presto-go-client/presto"
+//	import "database/sql"
+//	import _ "github.com/prestodb/presto-go-client/presto"
 //
-//  dsn := "http://user@localhost:8080?catalog=default&schema=test"
-//  db, err := sql.Open("presto", dsn)
-//
+//	dsn := "http://user@localhost:8080?catalog=default&schema=test"
+//	db, err := sql.Open("presto", dsn)
 package presto
 
 import (
@@ -65,6 +64,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -245,7 +245,7 @@ func newConn(dsn string) (*Conn, error) {
 			return nil, fmt.Errorf("presto: custom client not registered: %q", clientKey)
 		}
 	} else if certPath := prestoQuery.Get(SSLCertPathConfig); certPath != "" && prestoURL.Scheme == "https" {
-		cert, err := ioutil.ReadFile(certPath)
+		cert, err := os.ReadFile(certPath)
 		if err != nil {
 			return nil, fmt.Errorf("presto: Error loading SSL Cert File: %v", err)
 		}
@@ -324,7 +324,6 @@ var customClientRegistry = struct {
 //	}
 //	presto.RegisterCustomClient("foobar", foobarClient)
 //	db, err := sql.Open("presto", "https://user@localhost:8080?custom_client=foobar")
-//
 func RegisterCustomClient(key string, client *http.Client) error {
 	if _, err := strconv.ParseBool(key); err == nil {
 		return fmt.Errorf("presto: custom client key %q is reserved", key)
