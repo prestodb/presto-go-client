@@ -758,6 +758,7 @@ func (qr *driverRows) Next(dest []driver.Value) error {
 			if qr.err == io.EOF {
 				return &EOF{QueryID: qr.id}
 			}
+			return qr.err
 		}
 	}
 	if len(qr.coltype) == 0 {
