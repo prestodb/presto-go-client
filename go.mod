@@ -1,4 +1,4 @@
-module github.com/prestodb/presto-go-client
+module github.com/ekeyme/openlookeng-go-client
 
 go 1.14
 
