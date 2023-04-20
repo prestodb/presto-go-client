@@ -43,12 +43,11 @@
 //
 // The driver should be used via the database/sql package:
 //
-//  import "database/sql"
-//  import _ "github.com/prestodb/presto-go-client/presto"
+//	import "database/sql"
+//	import _ "github.com/prestodb/presto-go-client/presto"
 //
-//  dsn := "http://user@localhost:8080?catalog=default&schema=test"
-//  db, err := sql.Open("presto", dsn)
-//
+//	dsn := "http://user@localhost:8080?catalog=default&schema=test"
+//	db, err := sql.Open("presto", dsn)
 package presto
 
 import (
@@ -114,6 +113,7 @@ const (
 	kerberosPrincipalConfig  = "KerberosPrincipal"
 	kerberosRealmConfig      = "KerberosRealm"
 	kerberosConfigPathConfig = "KerberosConfigPath"
+	KerberosSPN              = "KerberosSPN"
 	SSLCertPathConfig        = "SSLCertPath"
 )
 
@@ -138,6 +138,7 @@ type Config struct {
 	KerberosPrincipal  string            // Kerberos Principal used to authenticate to KDC (optional)
 	KerberosRealm      string            // The Kerberos Realm (optional)
 	KerberosConfigPath string            // The krb5 config path (optional)
+	KerberosCustomSPN  string            // The custom SPN to use for getting service ticket of presto server (optional), default is "presto/{PrestoURI}"
 	SSLCertPath        string            // The SSL cert path for TLS verification (optional)
 }
 
@@ -173,6 +174,7 @@ func (c *Config) FormatDSN() (string, error) {
 		query.Add(kerberosPrincipalConfig, c.KerberosPrincipal)
 		query.Add(kerberosRealmConfig, c.KerberosRealm)
 		query.Add(kerberosConfigPathConfig, c.KerberosConfigPath)
+		query.Add(KerberosSPN, c.KerberosCustomSPN)
 		if !isSSL {
 			return "", fmt.Errorf("presto: client configuration error, SSL must be enabled for secure env")
 		}
@@ -200,6 +202,8 @@ type Conn struct {
 	httpHeaders     http.Header
 	kerberosClient  client.Client
 	kerberosEnabled bool
+	// kerberosSPN is the service principal name of the presto server, when empty we use "presto/{reqURL.Hostname}" as the default
+	kerberosSPN string
 }
 
 var (
@@ -269,6 +273,7 @@ func newConn(dsn string) (*Conn, error) {
 		httpHeaders:     make(http.Header),
 		kerberosClient:  kerberosClient,
 		kerberosEnabled: kerberosEnabled,
+		kerberosSPN:     prestoQuery.Get(KerberosSPN),
 	}
 
 	var user string
@@ -326,7 +331,6 @@ var customClientRegistry = struct {
 //	}
 //	presto.RegisterCustomClient("foobar", foobarClient)
 //	db, err := sql.Open("presto", "https://user@localhost:8080?custom_client=foobar")
-//
 func RegisterCustomClient(key string, client *http.Client) error {
 	if _, err := strconv.ParseBool(key); err == nil {
 		return fmt.Errorf("presto: custom client key %q is reserved", key)
@@ -407,7 +411,14 @@ func (c *Conn) newRequest(method, url string, body io.Reader, hs http.Header) (*
 	}
 
 	if c.kerberosEnabled {
-		err = c.kerberosClient.SetSPNEGOHeader(req, "presto/"+req.URL.Hostname())
+		var spn string
+		if c.kerberosSPN != "" {
+			spn = c.kerberosSPN
+		} else {
+			spn = "presto/" + req.URL.Hostname()
+		}
+
+		err = c.kerberosClient.SetSPNEGOHeader(req, spn)
 		if err != nil {
 			return nil, fmt.Errorf("error setting client SPNEGO header: %v", err)
 		}
@@ -658,7 +669,7 @@ func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue
 		ctx:     ctx,
 		stmt:    st,
 		nextURI: sr.NextURI,
-		id: sr.ID,
+		id:      sr.ID,
 	}
 	completedChannel := make(chan struct{})
 	defer close(completedChannel)

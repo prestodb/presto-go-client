@@ -83,6 +83,7 @@ func TestKerberosConfig(t *testing.T) {
 		KerberosPrincipal:  "presto/testhost",
 		KerberosRealm:      "example.com",
 		KerberosConfigPath: "/etc/krb5.conf",
+		KerberosCustomSPN:  "HTTP/localhost",
 		SSLCertPath:        "/tmp/test.cert",
 	}
 	dsn, err := c.FormatDSN()
@@ -90,7 +91,7 @@ func TestKerberosConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := "https://foobar@localhost:8090?KerberosConfigPath=%2Fetc%2Fkrb5.conf&KerberosEnabled=true&KerberosKeytabPath=%2Fopt%2Ftest.keytab&KerberosPrincipal=presto%2Ftesthost&KerberosRealm=example.com&SSLCertPath=%2Ftmp%2Ftest.cert&session_properties=query_priority%3D1&source=presto-go-client"
+	want := "https://foobar@localhost:8090?KerberosConfigPath=%2Fetc%2Fkrb5.conf&KerberosEnabled=true&KerberosKeytabPath=%2Fopt%2Ftest.keytab&KerberosPrincipal=presto%2Ftesthost&KerberosRealm=example.com&KerberosSPN=HTTP%2Flocalhost&SSLCertPath=%2Ftmp%2Ftest.cert&session_properties=query_priority%3D1&source=presto-go-client"
 	if dsn != want {
 		t.Fatal("unexpected dsn:", dsn)
 	}
