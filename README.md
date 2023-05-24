@@ -22,7 +22,7 @@ A [Presto](https://prestodb.io) client for the [Go](https://golang.org) programm
 
 ## Requirements
 
-* Go 1.8 or newer
+* Go 1.18 or newer
 * Presto 0.16x or newer
 
 ## Installation
