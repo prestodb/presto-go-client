@@ -657,7 +657,7 @@ func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue
 		ctx:     ctx,
 		stmt:    st,
 		nextURI: sr.NextURI,
-		id: sr.ID,
+		id:      sr.ID,
 	}
 	completedChannel := make(chan struct{})
 	defer close(completedChannel)
@@ -678,6 +678,12 @@ func (st *driverStmt) QueryContext(ctx context.Context, args []driver.NamedValue
 	return rows, nil
 }
 
+type rowsColumn struct {
+	name   string
+	dbType string
+	vc     driver.ValueConverter
+}
+
 type driverRows struct {
 	ctx     context.Context
 	stmt    *driverStmt
@@ -686,8 +692,7 @@ type driverRows struct {
 
 	err      error
 	rowindex int
-	columns  []string
-	coltype  []*typeConverter
+	columns  []rowsColumn
 	data     []queryData
 }
 
@@ -730,13 +735,17 @@ func (qr *driverRows) Columns() []string {
 			return []string{}
 		}
 	}
-	return qr.columns
+	res := make([]string, len(qr.columns))
+	for i, c := range qr.columns {
+		res[i] = c.name
+	}
+	return res
 }
 
 var coltypeLengthSuffix = regexp.MustCompile(`\(\d+\)$`)
 
 func (qr *driverRows) ColumnTypeDatabaseTypeName(index int) string {
-	name := qr.coltype[index].typeName
+	name := qr.columns[index].dbType
 	if m := coltypeLengthSuffix.FindStringSubmatch(name); m != nil {
 		name = name[0 : len(name)-len(m[0])]
 	}
@@ -760,12 +769,12 @@ func (qr *driverRows) Next(dest []driver.Value) error {
 			return qr.err
 		}
 	}
-	if len(qr.coltype) == 0 {
+	if len(qr.columns) == 0 {
 		qr.err = sql.ErrNoRows
 		return qr.err
 	}
-	for i, v := range qr.coltype {
-		vv, err := v.ConvertValue(qr.data[qr.rowindex][i])
+	for i, v := range qr.columns {
+		vv, err := v.vc.ConvertValue(qr.data[qr.rowindex][i])
 		if err != nil {
 			qr.err = err
 			return err
@@ -796,9 +805,9 @@ type queryColumn struct {
 type queryData []interface{}
 
 type typeSignature struct {
-	RawType          string        `json:"rawType"`
-	TypeArguments    []interface{} `json:"typeArguments"`
-	LiteralArguments []interface{} `json:"literalArguments"`
+	RawType          string            `json:"rawType"`
+	TypeArguments    []json.RawMessage `json:"typeArguments"`
+	LiteralArguments []json.RawMessage `json:"literalArguments"`
 }
 
 type infoResponse struct {
@@ -855,18 +864,25 @@ func (qr *driverRows) fetch(allowEOF bool) error {
 		}
 	}
 	if qr.columns == nil && len(qresp.Columns) > 0 {
-		qr.initColumns(&qresp)
+		return qr.initColumns(&qresp)
 	}
 	return nil
 }
 
-func (qr *driverRows) initColumns(qresp *queryResponse) {
-	qr.columns = make([]string, len(qresp.Columns))
-	qr.coltype = make([]*typeConverter, len(qresp.Columns))
-	for i, col := range qresp.Columns {
-		qr.columns[i] = col.Name
-		qr.coltype[i] = newTypeConverter(col.Type)
+func (qr *driverRows) initColumns(resp *queryResponse) error {
+	qr.columns = make([]rowsColumn, len(resp.Columns))
+	for i, col := range resp.Columns {
+		vc, err := newComplexConverter(col.TypeSignature)
+		if err != nil {
+			return fmt.Errorf("presto: creating complex converter for %s: %w", col.Name, err)
+		}
+		qr.columns[i] = rowsColumn{
+			name:   col.Name,
+			dbType: col.Type,
+			vc:     vc,
+		}
 	}
+	return nil
 }
 
 type typeConverter struct {
@@ -874,7 +890,7 @@ type typeConverter struct {
 	parsedType []string // e.g. array, array, varchar, for [][]string
 }
 
-func newTypeConverter(typeName string) *typeConverter {
+func newTypeConverter(typeName string) driver.ValueConverter {
 	return &typeConverter{
 		typeName:   typeName,
 		parsedType: parseType(typeName),
