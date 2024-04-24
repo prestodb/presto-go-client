@@ -7,23 +7,23 @@ A [Presto](https://prestodb.io) client for the [Go](https://golang.org) programm
 
 ## Features
 
-- Native Go implementation
-- Connections over HTTP or HTTPS
-- HTTP Basic and Kerberos authentication
-- Per-query user information for access control
-- Support custom HTTP client (tunable conn pools, timeouts, TLS)
-- Supports conversion from Presto to native Go data types
-  - `string`, `sql.NullString`
-  - `int64`, `presto.NullInt64`
-  - `float64`, `presto.NullFloat64`
-  - `map`, `presto.NullMap`
-  - `time.Time`, `presto.NullTime`
-  - Up to 3-dimensional arrays to Go slices, of any supported type
+* Native Go implementation
+* Connections over HTTP or HTTPS
+* HTTP Basic and Kerberos authentication
+* Per-query user information for access control
+* Support custom HTTP client (tunable conn pools, timeouts, TLS)
+* Supports conversion from Presto to native Go data types
+  * `string`, `sql.NullString`
+  * `int64`, `presto.NullInt64`
+  * `float64`, `presto.NullFloat64`
+  * `map`, `presto.NullMap`
+  * `time.Time`, `presto.NullTime`
+  * Up to 3-dimensional arrays to Go slices, of any supported type
 
 ## Requirements
 
-- Go 1.18 or newer
-- Presto 0.16x or newer
+* Go 1.18 or newer
+* Presto 0.16x or newer
 
 ## Installation
 
@@ -39,7 +39,7 @@ Make sure you have Git installed and in your $PATH.
 
 ## Usage
 
-This Presto client is an implementation of Go's `database/sql/driver` interface. In order to use it, you need to import the package and use the [`database/sql`](https://golang.org/pkg/database/sql/) API then.
+This Presto client is an implementation of Go's `database/sql/driver` interface. In order to use it, you need to import the package and use the  [`database/sql`](https://golang.org/pkg/database/sql/) API then.
 
 Only read operations are supported, such as SHOW and SELECT.
 
@@ -105,7 +105,7 @@ The driver supports both HTTP and HTTPS. If you use HTTPS it's recommended that 
 
 #### Parameters
 
-_Parameters are case-sensitive_
+*Parameters are case-sensitive*
 
 Refer to the [Presto Concepts](https://prestodb.io/docs/current/overview/concepts.html) documentation for more information.
 
