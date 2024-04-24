@@ -115,6 +115,8 @@ const (
 	kerberosRealmConfig      = "KerberosRealm"
 	kerberosConfigPathConfig = "KerberosConfigPath"
 	SSLCertPathConfig        = "SSLCertPath"
+
+	AccessToken = "AccessToken"
 )
 
 type sqldriver struct{}
@@ -139,6 +141,7 @@ type Config struct {
 	KerberosRealm      string            // The Kerberos Realm (optional)
 	KerberosConfigPath string            // The krb5 config path (optional)
 	SSLCertPath        string            // The SSL cert path for TLS verification (optional)
+	AccessToken        string            // The JWT access token for authentication (optional)
 }
 
 // FormatDSN returns a DSN string from the configuration.
@@ -176,6 +179,10 @@ func (c *Config) FormatDSN() (string, error) {
 		if !isSSL {
 			return "", fmt.Errorf("presto: client configuration error, SSL must be enabled for secure env")
 		}
+	}
+
+	if c.AccessToken != "" {
+		query.Add(AccessToken, c.AccessToken)
 	}
 
 	for k, v := range map[string]string{
@@ -290,6 +297,11 @@ func newConn(dsn string) (*Conn, error) {
 		if v != "" {
 			c.httpHeaders.Add(k, v)
 		}
+	}
+
+	// if a JWT access token is provided, add an Authorization header with Bearer token
+	if prestoQuery.Get(AccessToken) != "" {
+		c.httpHeaders.Set("Authorization", "Bearer "+prestoQuery.Get(AccessToken))
 	}
 
 	return c, nil
