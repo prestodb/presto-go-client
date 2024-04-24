@@ -357,7 +357,10 @@ func TestJWTAuthHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	db.Query("SELECT 1")
+	_, err = db.Query("SELECT 1")
+	if err.Error() != "presto: EOF" {
+		t.Fatal("expected query to return EOF", err)
+	}
 }
 
 func TestTypeConversion(t *testing.T) {
