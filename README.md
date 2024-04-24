@@ -69,13 +69,13 @@ HTTP Basic authentication **is only supported on encrypted connections over HTTP
 
 This driver supports Kerberos authentication by setting up the Kerberos fields in the [Config](https://godoc.org/github.com/prestodb/presto-go-client/presto#Config) struct.
 
+Please refer to the [Coordinator Kerberos Authentication](https://prestodb.io/docs/current/security/server.html) for server-side configuration.
+
 #### JWT authentication
 
 This driver supports JWT authentication by setting the `AccessToken` field in the configuration. Simply add the query parameter with the JWT bearer token to be used for authentication. This token will then be sent as a bearer token for all HTTP requests.
 
 This authentication method has lower precedence than HTTP basic authentication.
-
-Please refer to the [Coordinator Kerberos Authentication](https://prestodb.io/docs/current/security/server.html) for server-side configuration.
 
 #### System access control and per-query user information
 
