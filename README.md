@@ -73,7 +73,7 @@ Please refer to the [Coordinator Kerberos Authentication](https://prestodb.io/do
 
 #### JWT authentication
 
-This driver supports JWT authentication by setting the `AccessToken` field in the configuration. Simply add the query parameter with the JWT bearer token to be used for authentication. This token will then be sent as a bearer token for all HTTP requests.
+This driver supports JWT authentication by setting the `AccessToken` field in the configuration. Add the query parameter with the JWT bearer token to be used for authentication. This token will then be sent as a bearer token for all HTTP requests.
 
 This authentication method has lower precedence than HTTP basic authentication.
 

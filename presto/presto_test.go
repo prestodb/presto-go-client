@@ -346,9 +346,10 @@ func TestJWTAuthHeader(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// validate the Authorization header is JWT token
 		if r.Header.Get("Authorization") != "Bearer test_token" {
-			t.Fatal("unexpected Authorization header, want JWT token")
+			w.WriteHeader(http.StatusUnauthorized)
+		} else {
+			w.WriteHeader(http.StatusOK)
 		}
-		w.WriteHeader(http.StatusOK)
 	}))
 	defer ts.Close()
 

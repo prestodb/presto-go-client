@@ -109,14 +109,14 @@ const (
 	prestoClientTagsHeader         = "X-Presto-Client-Tags"
 	prestoClientInfoHeader         = "X-Presto-Client-Info"
 
-	KerberosEnabledConfig    = "KerberosEnabled"
+	kerberosEnabledConfig    = "KerberosEnabled"
 	kerberosKeytabPathConfig = "KerberosKeytabPath"
 	kerberosPrincipalConfig  = "KerberosPrincipal"
 	kerberosRealmConfig      = "KerberosRealm"
 	kerberosConfigPathConfig = "KerberosConfigPath"
-	SSLCertPathConfig        = "SSLCertPath"
+	sSLCertPathConfig        = "SSLCertPath"
 
-	AccessToken = "AccessToken"
+	accessTokenConfig = "AccessToken"
 )
 
 type sqldriver struct{}
@@ -167,11 +167,11 @@ func (c *Config) FormatDSN() (string, error) {
 	isSSL := prestoURL.Scheme == "https"
 
 	if isSSL && c.SSLCertPath != "" {
-		query.Add(SSLCertPathConfig, c.SSLCertPath)
+		query.Add(sSLCertPathConfig, c.SSLCertPath)
 	}
 
 	if KerberosEnabled {
-		query.Add(KerberosEnabledConfig, "true")
+		query.Add(kerberosEnabledConfig, "true")
 		query.Add(kerberosKeytabPathConfig, c.KerberosKeytabPath)
 		query.Add(kerberosPrincipalConfig, c.KerberosPrincipal)
 		query.Add(kerberosRealmConfig, c.KerberosRealm)
@@ -182,7 +182,7 @@ func (c *Config) FormatDSN() (string, error) {
 	}
 
 	if c.AccessToken != "" {
-		query.Add(AccessToken, c.AccessToken)
+		query.Add(accessTokenConfig, c.AccessToken)
 	}
 
 	for k, v := range map[string]string{
@@ -223,7 +223,7 @@ func newConn(dsn string) (*Conn, error) {
 
 	prestoQuery := prestoURL.Query()
 
-	kerberosEnabled, _ := strconv.ParseBool(prestoQuery.Get(KerberosEnabledConfig))
+	kerberosEnabled, _ := strconv.ParseBool(prestoQuery.Get(kerberosEnabledConfig))
 
 	var kerberosClient client.Client
 
@@ -253,7 +253,7 @@ func newConn(dsn string) (*Conn, error) {
 		if httpClient == nil {
 			return nil, fmt.Errorf("presto: custom client not registered: %q", clientKey)
 		}
-	} else if certPath := prestoQuery.Get(SSLCertPathConfig); certPath != "" && prestoURL.Scheme == "https" {
+	} else if certPath := prestoQuery.Get(sSLCertPathConfig); certPath != "" && prestoURL.Scheme == "https" {
 		cert, err := os.ReadFile(certPath)
 		if err != nil {
 			return nil, fmt.Errorf("presto: Error loading SSL Cert File: %v", err)
@@ -300,8 +300,8 @@ func newConn(dsn string) (*Conn, error) {
 	}
 
 	// if a JWT access token is provided, add an Authorization header with Bearer token
-	if prestoQuery.Get(AccessToken) != "" {
-		c.httpHeaders.Set("Authorization", "Bearer "+prestoQuery.Get(AccessToken))
+	if token := prestoQuery.Get(accessTokenConfig); token != "" {
+		c.httpHeaders.Set("Authorization", "Bearer "+token)
 	}
 
 	return c, nil
