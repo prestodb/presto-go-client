@@ -107,6 +107,23 @@ func TestInvalidKerberosConfig(t *testing.T) {
 	}
 }
 
+func TestJWTConfig(t *testing.T) {
+	c := &Config{
+		PrestoURI:         "https://foobar@localhost:8090",
+		SessionProperties: map[string]string{"query_priority": "1"},
+		AccessToken:       "test_token",
+	}
+	dsn, err := c.FormatDSN()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := "https://foobar@localhost:8090?AccessToken=test_token&session_properties=query_priority%3D1&source=presto-go-client"
+	if dsn != want {
+		t.Fatal("unexpected dsn:", dsn)
+	}
+}
+
 func TestConfigWithMalformedURL(t *testing.T) {
 	_, err := (&Config{PrestoURI: ":("}).FormatDSN()
 	if err == nil {
@@ -321,6 +338,29 @@ func TestUnsupportedExec(t *testing.T) {
 	defer db.Close()
 	if _, err := db.Exec("CREATE TABLE foobar (V VARCHAR)"); err == nil {
 		t.Fatal("unsupported exec succeeded with no error")
+	}
+}
+
+func TestJWTAuthHeader(t *testing.T) {
+	// this test ensures that the JWT token is passed as a Bearer token within the Authorization header
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// validate the Authorization header is JWT token
+		if r.Header.Get("Authorization") != "Bearer test_token" {
+			w.WriteHeader(http.StatusUnauthorized)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer ts.Close()
+
+	db, err := sql.Open("presto", ts.URL+"?AccessToken=test_token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = db.Query("SELECT 1")
+	if err.Error() != "presto: EOF" {
+		t.Fatal("expected query to return EOF", err)
 	}
 }
 
