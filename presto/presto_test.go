@@ -457,6 +457,89 @@ func TestTypeConversion(t *testing.T) {
 	}
 }
 
+func TestArrayTypeConversionWithJSONString(t *testing.T) {
+	// Test that typeConverter.ConvertValue handles JSON-encoded string arrays
+	// This simulates the case where Presto REST API returns array(varchar) as a JSON string
+	testcases := []struct {
+		name          string
+		prestoType    string
+		inputValue    interface{}
+		expectedValue interface{}
+		expectError   bool
+	}{
+		{
+			name:          "array from JSON string",
+			prestoType:    "array(varchar)",
+			inputValue:    `["CustomAnalytics Solutions", "PredictiveForecasting Module"]`,
+			expectedValue: []interface{}{"CustomAnalytics Solutions", "PredictiveForecasting Module"},
+			expectError:   false,
+		},
+		{
+			name:          "array from []interface{}",
+			prestoType:    "array(varchar)",
+			inputValue:    []interface{}{"hello", "world"},
+			expectedValue: []interface{}{"hello", "world"},
+			expectError:   false,
+		},
+		{
+			name:          "array nil value",
+			prestoType:    "array(varchar)",
+			inputValue:    nil,
+			expectedValue: nil,
+			expectError:   false,
+		},
+		{
+			name:        "array from invalid JSON string",
+			prestoType:  "array(varchar)",
+			inputValue:  `["invalid json`,
+			expectError: true,
+		},
+		{
+			name:        "array from unsupported type",
+			prestoType:  "array(varchar)",
+			inputValue:  123,
+			expectError: true,
+		},
+		{
+			name:          "empty array from JSON string",
+			prestoType:    "array(varchar)",
+			inputValue:    `[]`,
+			expectedValue: []interface{}{},
+			expectError:   false,
+		},
+		{
+			name:          "array with null elements from JSON string",
+			prestoType:    "array(varchar)",
+			inputValue:    `["a", null, "b"]`,
+			expectedValue: []interface{}{"a", nil, "b"},
+			expectError:   false,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			converter := newTypeConverter(tc.prestoType)
+			result, err := converter.ConvertValue(tc.inputValue)
+
+			if tc.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if !reflect.DeepEqual(result, tc.expectedValue) {
+				t.Errorf("unexpected result:\nhave: %+v (%T)\nwant: %+v (%T)", result, result, tc.expectedValue, tc.expectedValue)
+			}
+		})
+	}
+}
+
 func TestSliceTypeConversion(t *testing.T) {
 	testcases := []struct {
 		GoType                           string
@@ -553,6 +636,114 @@ func TestSliceTypeConversion(t *testing.T) {
 				t.Error(err)
 			}
 			tc.TestScanner(t, tc.Scanner)
+		})
+	}
+}
+
+func TestNullSliceStringWithJSONString(t *testing.T) {
+	// Test that NullSliceString.Scan handles JSON-encoded string arrays
+	// via the normalizeToInterfaceSlice helper
+	testcases := []struct {
+		name          string
+		inputValue    interface{}
+		expectedValid bool
+		expectedLen   int
+		expectError   bool
+	}{
+		{
+			name:          "JSON string array",
+			inputValue:    `["CustomAnalytics Solutions", "PredictiveForecasting Module"]`,
+			expectedValid: true,
+			expectedLen:   2,
+			expectError:   false,
+		},
+		{
+			name:          "[]interface{} array",
+			inputValue:    []interface{}{"hello", "world"},
+			expectedValid: true,
+			expectedLen:   2,
+			expectError:   false,
+		},
+		{
+			name:          "nil value",
+			inputValue:    nil,
+			expectedValid: false,
+			expectedLen:   0,
+			expectError:   false,
+		},
+		{
+			name:          "empty JSON array",
+			inputValue:    `[]`,
+			expectedValid: true,
+			expectedLen:   0,
+			expectError:   false,
+		},
+		{
+			name:          "JSON array with nulls",
+			inputValue:    `["a", null, "b"]`,
+			expectedValid: true,
+			expectedLen:   3,
+			expectError:   false,
+		},
+		{
+			name:        "invalid JSON string",
+			inputValue:  `["invalid`,
+			expectError: true,
+		},
+		{
+			name:        "unsupported type",
+			inputValue:  123,
+			expectError: true,
+		},
+		{
+			name:          "[]byte JSON array",
+			inputValue:    []byte(`["test1", "test2"]`),
+			expectedValid: true,
+			expectedLen:   2,
+			expectError:   false,
+		},
+		{
+			name:          "concrete []string slice",
+			inputValue:    []string{"a", "b", "c"},
+			expectedValid: true,
+			expectedLen:   3,
+			expectError:   false,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			scanner := &NullSliceString{}
+			err := scanner.Scan(tc.inputValue)
+
+			if tc.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if scanner.Valid != tc.expectedValid {
+				t.Errorf("unexpected Valid: have %v, want %v", scanner.Valid, tc.expectedValid)
+			}
+
+			if len(scanner.SliceString) != tc.expectedLen {
+				t.Errorf("unexpected length: have %d, want %d", len(scanner.SliceString), tc.expectedLen)
+			}
+
+			// Verify the first element if we expect data
+			if tc.expectedLen > 0 && tc.inputValue != nil {
+				if tc.name == "JSON string array" {
+					if !scanner.SliceString[0].Valid || scanner.SliceString[0].String != "CustomAnalytics Solutions" {
+						t.Errorf("unexpected first element: %+v", scanner.SliceString[0])
+					}
+				}
+			}
 		})
 	}
 }

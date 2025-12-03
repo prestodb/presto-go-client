@@ -418,3 +418,81 @@ func TestIntegrationQueryParametersSelect(t *testing.T) {
 		})
 	}
 }
+
+func TestIntegrationArrayVarcharColumn(t *testing.T) {
+	db := integrationOpen(t)
+	defer db.Close()
+
+	// Test querying array(varchar) columns
+	// This tests the fix for JSON-encoded string arrays from Presto REST API
+	testcases := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "inline array literal",
+			query: "SELECT ARRAY['CustomAnalytics Solutions', 'PredictiveForecasting Module'] as products",
+		},
+		{
+			name:  "empty array",
+			query: "SELECT ARRAY[] as empty_products",
+		},
+		{
+			name:  "array with nulls",
+			query: "SELECT ARRAY['Product1', NULL, 'Product2'] as products_with_nulls",
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			rows, err := db.Query(tc.query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer rows.Close()
+
+			if !rows.Next() {
+				t.Fatal("expected at least one row")
+			}
+
+			var products NullSliceString
+			err = rows.Scan(&products)
+			if err != nil {
+				t.Fatalf("failed to scan array(varchar): %v", err)
+			}
+
+			if !products.Valid {
+				t.Error("expected Valid=true for non-null array")
+			}
+
+			// Verify we got the data
+			if tc.name == "inline array literal" {
+				if len(products.SliceString) != 2 {
+					t.Errorf("expected 2 elements, got %d", len(products.SliceString))
+				}
+				if products.SliceString[0].String != "CustomAnalytics Solutions" {
+					t.Errorf("unexpected first element: %s", products.SliceString[0].String)
+				}
+			} else if tc.name == "empty array" {
+				if len(products.SliceString) != 0 {
+					t.Errorf("expected 0 elements for empty array, got %d", len(products.SliceString))
+				}
+			} else if tc.name == "array with nulls" {
+				if len(products.SliceString) != 3 {
+					t.Errorf("expected 3 elements, got %d", len(products.SliceString))
+				}
+				if products.SliceString[1].Valid {
+					t.Error("expected middle element to be NULL")
+				}
+			}
+
+			if rows.Next() {
+				t.Error("expected only one row")
+			}
+
+			if err = rows.Err(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
