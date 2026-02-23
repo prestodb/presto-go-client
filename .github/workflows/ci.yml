@@ -164,6 +164,34 @@ jobs:
         working-directory: prestoauth/oauth2
         run: govulncheck ./...
 
+  commit-messages:
+    name: Commit Messages
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check semantic commit messages
+        run: |
+          MERGE_BASE=$(git merge-base ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+          COMMITS=$(git log --format='%s' "$MERGE_BASE"..${{ github.event.pull_request.head.sha }})
+          PATTERN='^(feat|fix|refactor|test|docs|ci|chore|perf|style|build|revert)(\(.+\))?: .+'
+          FAILED=0
+          while IFS= read -r msg; do
+            if [[ ! "$msg" =~ $PATTERN ]]; then
+              echo "::error::Non-compliant commit message: $msg"
+              FAILED=1
+            fi
+          done <<< "$COMMITS"
+          if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "Commit messages must follow: <type>: <description>"
+            echo "Valid types: feat, fix, refactor, test, docs, ci, chore, perf, style, build, revert"
+            exit 1
+          fi
+
   build:
     name: Build
     runs-on: ubuntu-latest
