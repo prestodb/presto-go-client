@@ -1,6 +1,6 @@
 module github.com/ethanyzhang/presto-go/prestoauth/kerberos
 
-go 1.25.7
+go 1.26.1
 
 require (
 	github.com/ethanyzhang/presto-go v0.0.0

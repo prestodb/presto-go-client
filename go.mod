@@ -1,6 +1,6 @@
 module github.com/ethanyzhang/presto-go
 
-go 1.25.7
+go 1.26.1
 
 require (
 	github.com/docker/go-units v0.5.0
