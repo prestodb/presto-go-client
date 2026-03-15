@@ -5,7 +5,7 @@ go 1.26.1
 require (
 	github.com/ethanyzhang/presto-go v0.0.0
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/oauth2 v0.25.0
+	golang.org/x/oauth2 v0.27.0
 )
 
 require (
