@@ -1,10 +1,10 @@
-module github.com/prestodb/presto-go-client/prestoauth/kerberos
+module github.com/prestodb/presto-go-client/v2/prestoauth/kerberos
 
 go 1.26.1
 
 require (
 	github.com/jcmturner/gokrb5/v8 v8.4.4
-	github.com/prestodb/presto-go-client v0.0.0
+	github.com/prestodb/presto-go-client/v2 v2.0.0
 	github.com/stretchr/testify v1.11.1
 )
 
@@ -26,4 +26,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/prestodb/presto-go-client => ../..
+replace github.com/prestodb/presto-go-client/v2 => ../..

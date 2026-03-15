@@ -15,7 +15,7 @@ import (
 	"github.com/jcmturner/gokrb5/v8/config"
 	"github.com/jcmturner/gokrb5/v8/keytab"
 	"github.com/jcmturner/gokrb5/v8/spnego"
-	presto "github.com/prestodb/presto-go-client"
+	presto "github.com/prestodb/presto-go-client/v2"
 )
 
 // Config holds Kerberos authentication parameters.

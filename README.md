@@ -24,14 +24,14 @@ A Go client library for [Presto](https://prestodb.io/) and [Trino](https://trino
 ## Installation
 
 ```bash
-go get github.com/prestodb/presto-go-client
+go get github.com/prestodb/presto-go-client/v2
 ```
 
 Optional authentication modules (separate dependencies, opt-in):
 
 ```bash
-go get github.com/prestodb/presto-go-client/prestoauth/kerberos  # Kerberos/SPNEGO
-go get github.com/prestodb/presto-go-client/prestoauth/oauth2    # OAuth2/JWT
+go get github.com/prestodb/presto-go-client/v2/prestoauth/kerberos  # Kerberos/SPNEGO
+go get github.com/prestodb/presto-go-client/v2/prestoauth/oauth2    # OAuth2/JWT
 ```
 
 ## Quick Start
@@ -46,7 +46,7 @@ import (
 	"fmt"
 	"log"
 
-	_ "github.com/prestodb/presto-go-client" // registers "presto" driver
+	_ "github.com/prestodb/presto-go-client/v2" // registers "presto" driver
 )
 
 func main() {
@@ -84,7 +84,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/prestodb/presto-go-client"
+	"github.com/prestodb/presto-go-client/v2"
 )
 
 func main() {
@@ -355,7 +355,7 @@ The `prestoauth/kerberos` module provides Kerberos authentication as a separate 
 ```go
 import (
     "database/sql"
-    "github.com/prestodb/presto-go-client/prestoauth/kerberos"
+    "github.com/prestodb/presto-go-client/v2/prestoauth/kerberos"
 )
 
 connector, closer, err := kerberos.NewConnector(
@@ -384,8 +384,8 @@ DSN parameters for Kerberos:
 
 ```go
 import (
-    "github.com/prestodb/presto-go-client"
-    "github.com/prestodb/presto-go-client/prestoauth/kerberos"
+    "github.com/prestodb/presto-go-client/v2"
+    "github.com/prestodb/presto-go-client/v2/prestoauth/kerberos"
 )
 
 client, _ := presto.NewClient("http://presto:8080")
@@ -413,7 +413,7 @@ The `prestoauth/oauth2` module provides token-based authentication as a separate
 #### Static Bearer Token
 
 ```go
-import "github.com/prestodb/presto-go-client/prestoauth/oauth2"
+import "github.com/prestodb/presto-go-client/v2/prestoauth/oauth2"
 
 // Via DSN
 connector, _ := oauth2.NewConnector("presto://host:8080/catalog?access_token=my-jwt-token")
@@ -525,8 +525,8 @@ The `prestotest` package provides a `MockPrestoServer` for integration testing. 
 
 ```go
 import (
-    "github.com/prestodb/presto-go-client"
-    "github.com/prestodb/presto-go-client/prestotest"
+    "github.com/prestodb/presto-go-client/v2"
+    "github.com/prestodb/presto-go-client/v2/prestotest"
 )
 
 func TestMyApp(t *testing.T) {
