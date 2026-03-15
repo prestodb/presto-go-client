@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"strings"
 
-	presto "github.com/ethanyzhang/presto-go"
+	presto "github.com/prestodb/presto-go-client"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 )

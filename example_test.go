@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethanyzhang/presto-go"
-	"github.com/ethanyzhang/presto-go/query_json"
+	"github.com/prestodb/presto-go-client"
+	"github.com/prestodb/presto-go-client/query_json"
 )
 
 // =============================================================================

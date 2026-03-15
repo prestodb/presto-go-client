@@ -24,7 +24,7 @@ cd prestoauth/oauth2 && go test ./... -race -count=1
 
 # Coverage (CI enforces 80% threshold)
 go test ./... -coverprofile=coverage.out -covermode=atomic \
-  -coverpkg=github.com/ethanyzhang/presto-go,github.com/ethanyzhang/presto-go/utils
+  -coverpkg=github.com/prestodb/presto-go-client,github.com/prestodb/presto-go-client/utils
 go tool cover -func=coverage.out | grep total
 
 # Lint
@@ -45,7 +45,7 @@ govulncheck ./...
 Three separate Go modules share this repo. Auth modules are opt-in to avoid forcing heavy dependencies (gokrb5, oauth2) on all consumers.
 
 ```
-github.com/ethanyzhang/presto-go           # root module (presto package)
+github.com/prestodb/presto-go-client           # root module (presto package)
 ├── utils/                                  # BiMap utility (subpackage, same module)
 ├── query_json/                             # Query info/stats types (subpackage, same module)
 ├── prestotest/                             # MockPrestoServer (subpackage, same module)
@@ -53,7 +53,7 @@ github.com/ethanyzhang/presto-go           # root module (presto package)
 └── prestoauth/oauth2/                      # separate module (x/oauth2 dep)
 ```
 
-Submodules use `replace github.com/ethanyzhang/presto-go => ../..` for local dev.
+Submodules use `replace github.com/prestodb/presto-go-client => ../..` for local dev.
 
 ### Client / Session
 

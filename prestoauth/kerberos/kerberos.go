@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"strings"
 
-	presto "github.com/ethanyzhang/presto-go"
+	presto "github.com/prestodb/presto-go-client"
 	"github.com/jcmturner/gokrb5/v8/client"
 	"github.com/jcmturner/gokrb5/v8/config"
 	"github.com/jcmturner/gokrb5/v8/keytab"
