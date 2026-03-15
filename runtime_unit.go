@@ -2,7 +2,7 @@ package presto
 
 import (
 	"fmt"
-	"github.com/ethanyzhang/presto-go/utils"
+	"github.com/prestodb/presto-go-client/utils"
 	"strconv"
 )
 

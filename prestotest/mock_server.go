@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ethanyzhang/presto-go"
+	"github.com/prestodb/presto-go-client"
 )
 
 // --- Data Models ---

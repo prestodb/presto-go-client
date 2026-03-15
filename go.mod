@@ -1,4 +1,4 @@
-module github.com/ethanyzhang/presto-go
+module github.com/prestodb/presto-go-client
 
 go 1.26.1
 

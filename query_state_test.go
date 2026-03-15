@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethanyzhang/presto-go"
+	"github.com/prestodb/presto-go-client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

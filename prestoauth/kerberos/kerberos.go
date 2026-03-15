@@ -11,11 +11,11 @@ import (
 	"net/url"
 	"strings"
 
-	presto "github.com/ethanyzhang/presto-go"
 	"github.com/jcmturner/gokrb5/v8/client"
 	"github.com/jcmturner/gokrb5/v8/config"
 	"github.com/jcmturner/gokrb5/v8/keytab"
 	"github.com/jcmturner/gokrb5/v8/spnego"
+	presto "github.com/prestodb/presto-go-client"
 )
 
 // Config holds Kerberos authentication parameters.
