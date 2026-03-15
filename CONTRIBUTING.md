@@ -21,7 +21,7 @@ Thanks for your interest in the Presto Go client library. We welcome contributio
 This repo contains three separate Go modules. The auth modules are separate to avoid forcing heavy dependencies (gokrb5, oauth2) on all consumers.
 
 ```
-github.com/prestodb/presto-go-client        # root module
+github.com/prestodb/presto-go-client/v2        # root module
 ├── prestoauth/kerberos/                     # separate module (gokrb5 dep)
 └── prestoauth/oauth2/                       # separate module (x/oauth2 dep)
 ```
@@ -61,7 +61,7 @@ CI enforces an 80% coverage threshold on the root module:
 
 ```bash
 go test ./... -coverprofile=coverage.out -covermode=atomic \
-  -coverpkg=github.com/prestodb/presto-go-client,github.com/prestodb/presto-go-client/utils
+  -coverpkg=github.com/prestodb/presto-go-client/v2,github.com/prestodb/presto-go-client/v2/utils
 go tool cover -func=coverage.out | grep total
 ```
 

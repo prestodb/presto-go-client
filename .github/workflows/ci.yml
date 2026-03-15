@@ -63,7 +63,7 @@ jobs:
           go-version: "1.26"
 
       - name: Run tests with coverage
-        run: go test ./... -coverprofile=coverage.out -covermode=atomic -coverpkg=github.com/prestodb/presto-go-client,github.com/prestodb/presto-go-client/utils
+        run: go test ./... -coverprofile=coverage.out -covermode=atomic -coverpkg=github.com/prestodb/presto-go-client/v2,github.com/prestodb/presto-go-client/v2/utils
 
       - name: Check coverage threshold
         run: |

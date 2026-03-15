@@ -1,9 +1,9 @@
-module github.com/prestodb/presto-go-client/prestoauth/oauth2
+module github.com/prestodb/presto-go-client/v2/prestoauth/oauth2
 
 go 1.26.1
 
 require (
-	github.com/prestodb/presto-go-client v0.0.0
+	github.com/prestodb/presto-go-client/v2 v2.0.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/oauth2 v0.27.0
 )
@@ -18,4 +18,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/prestodb/presto-go-client => ../..
+replace github.com/prestodb/presto-go-client/v2 => ../..
