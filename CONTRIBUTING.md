@@ -65,6 +65,16 @@ go test ./... -coverprofile=coverage.out -covermode=atomic \
 go tool cover -func=coverage.out | grep total
 ```
 
+### Bumping the Go Version
+
+Use the provided script to update all `go.mod` files and the CI workflow at once:
+
+```bash
+./scripts/bump-go-version.sh 1.26.1
+```
+
+After running the script, follow the printed instructions to run `go mod tidy`, tests, and lint on all modules. If you upgraded to a new major Go release, rebuild your tools (`staticcheck`, `govulncheck`) with `go install` so they match.
+
 ### Before Submitting
 
 Run the full check suite:

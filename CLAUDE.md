@@ -33,6 +33,9 @@ staticcheck ./...
 
 # Vulnerability check
 govulncheck ./...
+
+# Bump Go version across all modules + CI
+./scripts/bump-go-version.sh <version>  # e.g., 1.26.1
 ```
 
 ## Architecture
