@@ -38,6 +38,8 @@ govulncheck ./...
 ./scripts/bump-go-version.sh <version>  # e.g., 1.26.1
 ```
 
+CI also includes a `release.yml` workflow for tagged releases.
+
 ## Architecture
 
 ### Module Structure
@@ -102,6 +104,9 @@ Varbinary values are base64-decoded from Presto's wire format. `time` and `time 
 
 ## Workflow
 
+- Commit messages must follow semantic format: `<type>: <description>` or `<type>(<scope>): <description>`
+  - Valid types: `feat`, `fix`, `refactor`, `test`, `docs`, `ci`, `chore`, `perf`, `style`, `build`, `revert`
+  - CI enforces this on pull requests
 - After completing any code change, always check whether README.md, CLAUDE.md, or code comments need to be updated to reflect the change.
 - Before finishing, always run `gofmt -w .`, `go vet ./...`, `staticcheck ./...`, and `go mod tidy` to ensure no formatting or lint issues remain.
 - A git pre-commit hook in `.githooks/pre-commit` runs fmt, vet, tests, and coverage across all modules. Activate with: `git config core.hooksPath .githooks`
