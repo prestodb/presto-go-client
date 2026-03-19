@@ -66,7 +66,7 @@ func TestGetQueryState_NilOptions(t *testing.T) {
 	assert.Empty(t, states)
 }
 
-func TestGenerateHttpQueryParameter(t *testing.T) {
+func TestGenerateHTTPQueryParameter(t *testing.T) {
 	t.Run("All fields set", func(t *testing.T) {
 		trueVal := true
 		limit := 100
@@ -76,7 +76,7 @@ func TestGenerateHttpQueryParameter(t *testing.T) {
 			IncludeAllQueries:  &trueVal,
 			QueryTextSizeLimit: &limit,
 		}
-		result := presto.GenerateHttpQueryParameter(&opts)
+		result := presto.GenerateHTTPQueryParameter(&opts)
 		assert.Contains(t, result, "user=admin")
 		assert.Contains(t, result, "includeAllQueries=true")
 		assert.Contains(t, result, "queryTextSizeLimit=100")
@@ -87,17 +87,17 @@ func TestGenerateHttpQueryParameter(t *testing.T) {
 		opts := presto.GetQueryStateOptions{
 			IncludeAllQueries: &trueVal,
 		}
-		result := presto.GenerateHttpQueryParameter(&opts)
+		result := presto.GenerateHTTPQueryParameter(&opts)
 		assert.Equal(t, "includeAllQueries=true", result)
 	})
 
 	t.Run("Nil input", func(t *testing.T) {
-		result := presto.GenerateHttpQueryParameter((*presto.GetQueryStateOptions)(nil))
+		result := presto.GenerateHTTPQueryParameter((*presto.GetQueryStateOptions)(nil))
 		assert.Empty(t, result)
 	})
 
 	t.Run("Non-struct input", func(t *testing.T) {
-		result := presto.GenerateHttpQueryParameter("not a struct")
+		result := presto.GenerateHTTPQueryParameter("not a struct")
 		assert.Empty(t, result)
 	})
 }

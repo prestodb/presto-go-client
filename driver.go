@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -160,6 +161,10 @@ func (cfg *dsnConfig) buildTLSConfig() (*tls.Config, error) {
 //	client.TLSConfig(tlsCfg)
 //
 // Pass empty strings to skip loading CA or client certificates.
+//
+// WARNING: Setting skipVerify to true disables all server certificate validation,
+// making the connection susceptible to man-in-the-middle attacks. This should
+// only be used for development/testing and must never be used in production.
 func BuildTLSConfig(caFile, certFile, keyFile string, skipVerify bool) (*tls.Config, error) {
 	tlsCfg := &tls.Config{
 		InsecureSkipVerify: skipVerify,
@@ -725,7 +730,7 @@ func (c *prestoConnector) Driver() driver.Driver {
 // and driver.ConnBeginTx.
 type prestoConn struct {
 	session *Session
-	closed  bool
+	closed  atomic.Bool
 }
 
 var _ driver.Conn = (*prestoConn)(nil)
@@ -735,7 +740,7 @@ var _ driver.ConnBeginTx = (*prestoConn)(nil)
 
 // Prepare implements driver.Conn.
 func (c *prestoConn) Prepare(query string) (driver.Stmt, error) {
-	if c.closed {
+	if c.closed.Load() {
 		return nil, driver.ErrBadConn
 	}
 	return &prestoStmt{conn: c, query: query}, nil
@@ -743,7 +748,7 @@ func (c *prestoConn) Prepare(query string) (driver.Stmt, error) {
 
 // Close implements driver.Conn.
 func (c *prestoConn) Close() error {
-	c.closed = true
+	c.closed.Store(true)
 	return nil
 }
 
@@ -754,7 +759,7 @@ func (c *prestoConn) Begin() (driver.Tx, error) {
 
 // BeginTx implements driver.ConnBeginTx.
 func (c *prestoConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
-	if c.closed {
+	if c.closed.Load() {
 		return nil, driver.ErrBadConn
 	}
 
@@ -781,7 +786,7 @@ func (c *prestoConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver
 	if err != nil {
 		return nil, fmt.Errorf("presto: failed to start transaction: %w", err)
 	}
-	return &prestoTx{conn: c}, nil
+	return &prestoTx{conn: c, ctx: ctx}, nil
 }
 
 // prestoIsolationLevel maps sql.IsolationLevel to Presto SQL syntax.
@@ -802,7 +807,7 @@ func prestoIsolationLevel(level sql.IsolationLevel) (string, error) {
 
 // QueryContext implements driver.QueryerContext.
 func (c *prestoConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
-	if c.closed {
+	if c.closed.Load() {
 		return nil, driver.ErrBadConn
 	}
 	positional, err := namedToPositional(args)
@@ -826,12 +831,12 @@ func (c *prestoConn) QueryContext(ctx context.Context, query string, args []driv
 		}
 	}
 
-	return newPrestoRows(qr, ctx)
+	return newPrestoRows(ctx, qr)
 }
 
 // ExecContext implements driver.ExecerContext.
 func (c *prestoConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
-	if c.closed {
+	if c.closed.Load() {
 		return nil, driver.ErrBadConn
 	}
 	positional, err := namedToPositional(args)
@@ -911,7 +916,7 @@ type prestoRows struct {
 var _ driver.Rows = (*prestoRows)(nil)
 
 // newPrestoRows creates a prestoRows from a QueryResults, parsing the initial data batch.
-func newPrestoRows(qr *QueryResults, ctx context.Context) (*prestoRows, error) {
+func newPrestoRows(ctx context.Context, qr *QueryResults) (*prestoRows, error) {
 	r := &prestoRows{
 		qr:      qr,
 		ctx:     ctx,
@@ -1065,18 +1070,19 @@ func namedValues(args []driver.Value) []driver.NamedValue {
 // prestoTx implements driver.Tx.
 type prestoTx struct {
 	conn *prestoConn
+	ctx  context.Context
 }
 
 var _ driver.Tx = (*prestoTx)(nil)
 
 // Commit implements driver.Tx.
 func (tx *prestoTx) Commit() error {
-	_, err := tx.conn.execDirect(context.Background(), "COMMIT")
+	_, err := tx.conn.execDirect(tx.ctx, "COMMIT")
 	return err
 }
 
 // Rollback implements driver.Tx.
 func (tx *prestoTx) Rollback() error {
-	_, err := tx.conn.execDirect(context.Background(), "ROLLBACK")
+	_, err := tx.conn.execDirect(tx.ctx, "ROLLBACK")
 	return err
 }

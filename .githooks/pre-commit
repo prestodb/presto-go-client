@@ -41,7 +41,7 @@ fi
 
 # Coverage threshold (80%)
 echo "Checking coverage..."
-go test ./... -coverprofile=coverage.out -covermode=atomic \
+go test ./... -count=1 -coverprofile=coverage.out -covermode=atomic \
   -coverpkg=github.com/prestodb/presto-go-client/v2,github.com/prestodb/presto-go-client/v2/utils
 COVERAGE=$(go tool cover -func=coverage.out 2>/dev/null | grep total | awk '{print $3}' | sed 's/%//')
 if [ -n "$COVERAGE" ]; then

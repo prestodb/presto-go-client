@@ -4,12 +4,12 @@
 package oauth2
 
 import (
-	"context"
 	"database/sql/driver"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	presto "github.com/prestodb/presto-go-client/v2"
 	"golang.org/x/oauth2"
@@ -66,16 +66,29 @@ func NewRequestOption(cfg Config) (presto.RequestOption, error) {
 		Scopes:       cfg.Scopes,
 	}
 
-	tokenSource := ccCfg.TokenSource(context.Background())
+	// Manage the cached token ourselves so that token refresh uses the
+	// request's context (respecting cancellation/deadlines) rather than
+	// a detached context.Background() that could hang indefinitely.
+	var (
+		mu          sync.Mutex
+		cachedToken *oauth2.Token
+	)
 
 	opt := func(req *http.Request) {
-		token, err := tokenSource.Token()
-		if err != nil {
-			// Cannot return an error from a RequestOption. The server will
-			// return 401 if the header is missing, surfacing as a query error.
-			return
+		mu.Lock()
+		defer mu.Unlock()
+
+		if cachedToken == nil || !cachedToken.Valid() {
+			ts := ccCfg.TokenSource(req.Context())
+			newToken, err := ts.Token()
+			if err != nil {
+				// Cannot return an error from a RequestOption. The server will
+				// return 401 if the header is missing, surfacing as a query error.
+				return
+			}
+			cachedToken = newToken
 		}
-		token.SetAuthHeader(req)
+		cachedToken.SetAuthHeader(req)
 	}
 
 	return opt, nil

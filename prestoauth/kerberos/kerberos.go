@@ -164,7 +164,9 @@ func NewConnector(dsn string) (driver.Connector, io.Closer, error) {
 		s.RequestOptions(opt)
 	}))
 	if err != nil {
-		closer.Close()
+		if closeErr := closer.Close(); closeErr != nil {
+			err = fmt.Errorf("%w (additionally, cleanup failed: %v)", err, closeErr)
+		}
 		return nil, nil, err
 	}
 

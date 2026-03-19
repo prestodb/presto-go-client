@@ -107,8 +107,12 @@ func (qr *QueryResults) FetchNextBatch(ctx context.Context) error {
 		return errors.New("cannot fetch next batch: no session associated with results")
 	}
 
-	for qr.NextUri != nil {
-		nextUri := *qr.NextUri
+	// Use a local variable to iterate so that *qr is only updated on success.
+	// This prevents the caller from seeing a partially-mutated struct if
+	// a context cancellation or error occurs mid-loop.
+	current := qr
+	for current.NextUri != nil {
+		nextUri := *current.NextUri
 		// Fetching through session automatically handles transaction state sync
 		newQr, _, err := qr.session.FetchNextBatch(ctx, nextUri)
 		if err != nil {
@@ -125,13 +129,18 @@ func (qr *QueryResults) FetchNextBatch(ctx context.Context) error {
 			return fmt.Errorf("fetch next batch failed for query %s: %w", qr.Id, err)
 		}
 
-		// Update internal state while preserving the session reference
-		*qr = *newQr
-		qr.session = newQr.session
+		current = newQr
 
-		if len(qr.Data) > 0 {
+		if len(current.Data) > 0 {
 			break
 		}
+	}
+
+	// Commit the final state to the caller's struct
+	if current != qr {
+		session := qr.session
+		*qr = *current
+		qr.session = session
 	}
 	return nil
 }

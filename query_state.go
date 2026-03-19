@@ -38,9 +38,9 @@ type GetQueryStateOptions struct {
 	QueryTextSizeLimit           *int    `query:"queryTextSizeLimit"`
 }
 
-// GenerateHttpQueryParameter converts a struct with `query` tags into a URL query string.
-// Nil pointer fields are skipped.
-func GenerateHttpQueryParameter(v any) string {
+// GenerateHTTPQueryParameter converts a struct with `query` tags into a URL query string.
+// Nil pointer fields are skipped. Returns an empty string for non-struct input.
+func GenerateHTTPQueryParameter(v any) string {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() == reflect.Pointer || rv.Kind() == reflect.Interface {
 		if rv.IsNil() {
@@ -83,7 +83,7 @@ func GenerateHttpQueryParameter(v any) string {
 func (s *Session) GetQueryState(ctx context.Context, reqOpt *GetQueryStateOptions, opts ...RequestOption) ([]QueryStateInfo, *http.Response, error) {
 	urlStr := "v1/queryState"
 	if reqOpt != nil {
-		if params := GenerateHttpQueryParameter(reqOpt); params != "" {
+		if params := GenerateHTTPQueryParameter(reqOpt); params != "" {
 			urlStr = fmt.Sprintf("v1/queryState?%s", params)
 		}
 	}

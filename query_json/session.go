@@ -23,7 +23,8 @@ type Session struct {
 	SessionPropertiesJson string `presto_query_creation_info:"session_properties_json" presto_query_statistics:"session_properties_json"`
 }
 
-// PrepareForInsert formats session properties into a JSON-like string for database insertion.
+// PrepareForInsert formats session properties into a {key=value, ...} string for database
+// insertion. This uses the Presto session properties wire format (not standard JSON).
 func (s *Session) PrepareForInsert() {
 	b := bytes.Buffer{}
 	b.WriteString("{")

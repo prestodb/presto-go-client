@@ -1,6 +1,7 @@
 package prestotest
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -171,7 +172,11 @@ func (m *MockPrestoServer) handleQueryWithPreMintedID(w http.ResponseWriter, r *
 
 // handleQueryInternal manages SQL matching and MockActiveQuery instantiation.
 func (m *MockPrestoServer) handleQueryInternal(w http.ResponseWriter, r *http.Request, queryID string) {
-	body, _ := io.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to read request body: %v", err), http.StatusInternalServerError)
+		return
+	}
 	sql := string(body)
 
 	m.queriesMutex.RLock()
@@ -196,12 +201,12 @@ func (m *MockPrestoServer) handleQueryInternal(w http.ResponseWriter, r *http.Re
 	}
 	m.queriesMutex.Unlock()
 
-	m.sendQueryResponse(w, queryID, 0)
+	m.sendQueryResponse(r.Context(), w, queryID, 0)
 }
 
 func (m *MockPrestoServer) handleFetchNextBatch(w http.ResponseWriter, r *http.Request) {
 	batchID, _ := strconv.Atoi(r.PathValue("batchId"))
-	m.sendQueryResponse(w, r.PathValue("queryId"), batchID)
+	m.sendQueryResponse(r.Context(), w, r.PathValue("queryId"), batchID)
 }
 
 func (m *MockPrestoServer) handleQueryInfo(w http.ResponseWriter, r *http.Request) {
@@ -232,7 +237,7 @@ func (m *MockPrestoServer) handleCancelQuery(w http.ResponseWriter, r *http.Requ
 		q.State = QueryStateCancelled
 	}
 	m.queriesMutex.Unlock()
-	m.sendQueryResponse(w, id, 0)
+	m.sendQueryResponse(r.Context(), w, id, 0)
 }
 
 // --- Protocol Response Logic ---
@@ -245,7 +250,7 @@ func writeJSON(w http.ResponseWriter, statusCode int, v any) {
 }
 
 // sendQueryResponse prepares a JSON payload and applies hierarchical latency.
-func (m *MockPrestoServer) sendQueryResponse(w http.ResponseWriter, queryID string, batchID int) {
+func (m *MockPrestoServer) sendQueryResponse(ctx context.Context, w http.ResponseWriter, queryID string, batchID int) {
 	m.queriesMutex.RLock()
 	query, exists := m.activeQueries[queryID]
 	if !exists {
@@ -263,12 +268,21 @@ func (m *MockPrestoServer) sendQueryResponse(w http.ResponseWriter, queryID stri
 	dataBatchCount := query.Template.DataBatches
 	queueBatchCount := query.Template.QueueBatches
 	totalRequests := dataBatchCount + queueBatchCount
+	if totalRequests == 0 {
+		totalRequests = 1
+	}
 
 	sleepDuration := totalLatency / time.Duration(totalRequests)
 	m.queriesMutex.RUnlock()
 
 	if sleepDuration > 0 {
-		time.Sleep(sleepDuration)
+		t := time.NewTimer(sleepDuration)
+		defer t.Stop()
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
 	}
 
 	m.queriesMutex.Lock()
@@ -334,7 +348,12 @@ func (m *MockPrestoServer) sendQueryResponse(w http.ResponseWriter, queryID stri
 			batchRows := query.Template.Data[start:end]
 			resp.Data = make([]json.RawMessage, len(batchRows))
 			for i, row := range batchRows {
-				resp.Data[i], _ = json.Marshal(row)
+				data, marshalErr := json.Marshal(row)
+				if marshalErr != nil {
+					http.Error(w, fmt.Sprintf("failed to marshal row data: %v", marshalErr), http.StatusInternalServerError)
+					return
+				}
+				resp.Data[i] = data
 			}
 		}
 	}
