@@ -61,7 +61,7 @@ Submodules use `replace github.com/prestodb/presto-go-client/v2 => ../..` for lo
 
 `Client` embeds `Session` (circular ref: `Session.client` points back to `Client`). Client owns the `httpClient` and server URL. Session owns isolated state (catalog, schema, user, transaction ID, session params, request options).
 
-`NewSession()` clones the embedded default session. Sessions are thread-safe via `sync.RWMutex`. All session setters use the fluent pattern (return `*Session`).
+`NewSession()` clones the embedded default session. Sessions are thread-safe via `Session.mu` (`sync.RWMutex`). Client-level fields (`httpClient`, `serverUrl`, `isTrino`, `forceHTTPS`) are separately protected by `Client.clientMu`. All session setters use the fluent pattern (return `*Session`).
 
 Persistent `RequestOptions` on Session apply to **every** request including `FetchNextBatch` — this is how auth modules (Kerberos, OAuth2) ensure tokens are sent on all requests, not just the initial query.
 
@@ -85,11 +85,13 @@ Interval types: `INTERVAL DAY TO SECOND` maps to `time.Duration`; `INTERVAL YEAR
 
 `BuildTLSConfig(caFile, certFile, keyFile, skipVerify)` is an exported helper for constructing `*tls.Config` — shared by the driver's DSN parsing and available to low-level `Client` API users.
 
-Varbinary values are base64-decoded from Presto's wire format. `time` and `time with time zone` types are parsed to `time.Time`. Closed connections return `driver.ErrBadConn`.
+Varbinary values are base64-decoded from Presto's wire format. `time` and `time with time zone` types are parsed to `time.Time`. Closed connections return `driver.ErrBadConn`. The `prestoConn.closed` field uses `atomic.Bool` for thread-safe access.
+
+Transactions store the context from `BeginTx` and use it for `Commit`/`Rollback`, so the caller's deadline/cancellation applies to the entire transaction lifecycle.
 
 ### Query Lifecycle
 
-`Session.Query()` → POST to `/v1/statement` → returns `QueryResults`. Results are fetched batch-by-batch via `FetchNextBatch()` or streamed via `Drain()`. Context cancellation triggers a DELETE request to cancel the query server-side.
+`Session.Query()` → POST to `/v1/statement` → returns `QueryResults`. Results are fetched batch-by-batch via `FetchNextBatch()` or streamed via `Drain()`. Context cancellation triggers a DELETE request to cancel the query server-side. `FetchNextBatch` uses a local variable to iterate through empty batches and only commits the final state to the caller's `QueryResults` on success, preventing partial mutation on error.
 
 ### Test Patterns
 
