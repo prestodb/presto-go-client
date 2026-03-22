@@ -53,7 +53,8 @@ func TestMockServer_DistributedLatency(t *testing.T) {
 	mockServer := prestotest.NewMockPrestoServer()
 	defer mockServer.Close()
 
-	client, _ := presto.NewClient(mockServer.URL(), "")
+	client, err := presto.NewClient(mockServer.URL(), "")
+	require.NoError(t, err)
 	session := client.NewSession()
 
 	// Setup: 200ms total latency, 1 data batch (Total 2 requests: initial + batch 1)
@@ -88,7 +89,8 @@ func TestQueryResults_DrainSuccess(t *testing.T) {
 	mockServer := prestotest.NewMockPrestoServer()
 	defer mockServer.Close()
 
-	client, _ := presto.NewClient(mockServer.URL(), "")
+	client, err := presto.NewClient(mockServer.URL(), "")
+	require.NoError(t, err)
 	session := client.NewSession()
 
 	data := [][]any{{1}, {2}, {3}, {4}, {5}}
@@ -98,10 +100,11 @@ func TestQueryResults_DrainSuccess(t *testing.T) {
 		DataBatches: 3,
 	})
 
-	results, _, _ := session.Query(context.Background(), "SELECT * FROM drain")
+	results, _, err := session.Query(context.Background(), "SELECT * FROM drain")
+	require.NoError(t, err)
 
 	rowCount := 0
-	err := results.Drain(context.Background(), func(qr *presto.QueryResults) error {
+	err = results.Drain(context.Background(), func(qr *presto.QueryResults) error {
 		rowCount += len(qr.Data)
 		// Verify memory optimization: Data should exist during handler
 		assert.NotEmpty(t, qr.Data)
@@ -118,7 +121,8 @@ func TestQueryResults_DrainHandlerError(t *testing.T) {
 	mockServer := prestotest.NewMockPrestoServer()
 	defer mockServer.Close()
 
-	client, _ := presto.NewClient(mockServer.URL(), "")
+	client, err := presto.NewClient(mockServer.URL(), "")
+	require.NoError(t, err)
 	session := client.NewSession()
 
 	mockServer.AddQuery(&prestotest.MockQueryTemplate{
@@ -127,10 +131,11 @@ func TestQueryResults_DrainHandlerError(t *testing.T) {
 		DataBatches: 2,
 	})
 
-	results, _, _ := session.Query(context.Background(), "SELECT * FROM fail_drain")
+	results, _, queryErr := session.Query(context.Background(), "SELECT * FROM fail_drain")
+	require.NoError(t, queryErr)
 
 	handlerErr := errors.New("handler failed")
-	err := results.Drain(context.Background(), func(qr *presto.QueryResults) error {
+	err = results.Drain(context.Background(), func(qr *presto.QueryResults) error {
 		return handlerErr
 	})
 
