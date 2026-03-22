@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -74,6 +75,14 @@ type MockQueryTemplate struct {
 	Data         [][]any            // The full result set partitioned across batches.
 	Error        *presto.QueryError // Optional error to simulate a query failure.
 	Latency      time.Duration      // Latency for the query execution.
+
+	// SetSessionProperties simulates X-Presto-Set-Session response headers.
+	// Each entry is sent as "key=urlEncodedValue" on the initial response.
+	SetSessionProperties map[string]string
+
+	// ClearSessionProperties simulates X-Presto-Clear-Session response headers.
+	// Each entry name is sent on the initial response.
+	ClearSessionProperties []string
 }
 
 // MockActiveQuery represents a live execution instance of a template.
@@ -362,6 +371,16 @@ func (m *MockPrestoServer) sendQueryResponse(ctx context.Context, w http.Respons
 	// where errors are reported after query planning/execution completes.
 	if !hasMore && query.Template.Error != nil {
 		resp.Error = query.Template.Error
+	}
+
+	// Send session property headers only on the first response, matching Presto server behavior.
+	if batchID == 0 && query.QueuedFor == 1 {
+		for k, v := range query.Template.SetSessionProperties {
+			w.Header().Add(presto.SetSessionHeader, k+"="+url.QueryEscape(v))
+		}
+		for _, name := range query.Template.ClearSessionProperties {
+			w.Header().Add(presto.ClearSessionHeader, name)
+		}
 	}
 
 	if query.State == QueryStateFinished || query.State == QueryStateCancelled || query.State == QueryStateFailed {

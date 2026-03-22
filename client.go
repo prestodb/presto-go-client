@@ -26,6 +26,8 @@ const (
 	CatalogHeader            = "X-Presto-Catalog"
 	SchemaHeader             = "X-Presto-Schema"
 	SessionHeader            = "X-Presto-Session"
+	SetSessionHeader         = "X-Presto-Set-Session"
+	ClearSessionHeader       = "X-Presto-Clear-Session"
 	TransactionHeader        = "X-Presto-Transaction-Id"
 	StartedTransactionHeader = "X-Presto-Started-Transaction-Id"
 	ClearTransactionHeader   = "X-Presto-Clear-Transaction-Id"
@@ -406,6 +408,7 @@ func (s *Session) Do(ctx context.Context, req *http.Request, v any) (*http.Respo
 		}
 
 		s.updateTransactionState(resp)
+		s.updateSessionProperties(resp)
 
 		if resp.StatusCode == http.StatusOK {
 			err = s.client.decodeResponseBody(resp, v)
@@ -478,6 +481,42 @@ func (s *Session) updateTransactionState(resp *http.Response) {
 		s.transactionId = id
 	} else if resp.Header.Get(s.client.CanonicalHeader(ClearTransactionHeader)) == "true" {
 		s.transactionId = ""
+	}
+}
+
+// updateSessionProperties processes X-Presto-Set-Session and X-Presto-Clear-Session
+// response headers. The server sends these when SET SESSION or RESET SESSION statements
+// are executed. Format: "key=urlEncodedValue" for Set, "key" for Clear.
+func (s *Session) updateSessionProperties(resp *http.Response) {
+	setKey := s.client.CanonicalHeader(SetSessionHeader)
+	clearKey := s.client.CanonicalHeader(ClearSessionHeader)
+
+	// Cheap existence check before allocating slices.
+	if resp.Header.Get(setKey) == "" && resp.Header.Get(clearKey) == "" {
+		return
+	}
+
+	setValues := resp.Header.Values(setKey)
+	clearValues := resp.Header.Values(clearKey)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, h := range setValues {
+		key, val, ok := strings.Cut(h, "=")
+		if !ok {
+			log.Warn().Str("header", h).Msg("malformed X-Presto-Set-Session header, skipping")
+			continue
+		}
+		decoded, err := url.QueryUnescape(val)
+		if err != nil {
+			log.Warn().Err(err).Str("header", h).Msg("failed to unescape X-Presto-Set-Session value, skipping")
+			continue
+		}
+		s.sessionParams[key] = decoded
+	}
+	for _, h := range clearValues {
+		delete(s.sessionParams, h)
 	}
 }
 

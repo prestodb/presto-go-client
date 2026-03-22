@@ -65,6 +65,8 @@ Submodules use `replace github.com/prestodb/presto-go-client/v2 => ../..` for lo
 
 Persistent `RequestOptions` on Session apply to **every** request including `FetchNextBatch` — this is how auth modules (Kerberos, OAuth2) ensure tokens are sent on all requests, not just the initial query.
 
+`Session.Do()` processes `X-Presto-Set-Session` and `X-Presto-Clear-Session` response headers (sent by the server after `SET SESSION` / `RESET SESSION` SQL statements), updating session params for subsequent requests.
+
 ### Driver (database/sql)
 
 `driver.go` implements `driver.Driver`, `driver.Connector`, `driver.Conn`, `driver.Rows`, `driver.Stmt`, and `driver.Tx`. The `init()` function registers the `"presto"` driver.

@@ -220,6 +220,46 @@ func TestDo_RetryAndState(t *testing.T) {
 	assert.Empty(t, s.transactionId)
 }
 
+func TestDo_SetSessionProperties(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("X-Presto-Set-Session", "optimize_hash_generation=true")
+		w.Header().Add("X-Presto-Set-Session", "execution_policy=a%2B1")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	c, _ := NewClient(srv.URL)
+	s := c.NewSession()
+
+	req, _ := s.NewRequest("GET", "/", nil)
+	_, err := s.Do(context.Background(), req, nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, "true", s.sessionParams["optimize_hash_generation"])
+	assert.Equal(t, "a+1", s.sessionParams["execution_policy"])
+}
+
+func TestDo_ClearSessionProperties(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("X-Presto-Clear-Session", "foo")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	c, _ := NewClient(srv.URL)
+	s := c.NewSession().SessionParam("foo", "bar").SessionParam("baz", "qux")
+
+	req, _ := s.NewRequest("GET", "/", nil)
+	_, err := s.Do(context.Background(), req, nil)
+
+	require.NoError(t, err)
+	_, hasFoo := s.sessionParams["foo"]
+	assert.False(t, hasFoo, "foo should have been cleared")
+	assert.Equal(t, "qux", s.sessionParams["baz"])
+}
+
 func TestDo_RetryBodyHandling(t *testing.T) {
 	newRetryServer := func(failCount int) (*httptest.Server, *int, *[]string) {
 		attempts := new(int)

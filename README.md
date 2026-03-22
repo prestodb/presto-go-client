@@ -244,10 +244,15 @@ session.Catalog("hive").Schema("production").User("etl_user")
 session.SessionParam("query_max_memory", "2GB")
 session.SessionParam("join_distribution_type", "PARTITIONED")
 
+// Remove a session parameter
+session.SessionParam("join_distribution_type", nil)
+
 // Clone a session for parallel workloads
 s2 := session.Clone()
 s2.Schema("staging")
 ```
+
+The client also processes `SET SESSION` and `RESET SESSION` SQL statements automatically. When the server responds with `X-Presto-Set-Session` or `X-Presto-Clear-Session` headers, the session properties are updated for subsequent requests. However, it is recommended to use the `SessionParam()` API or DSN parameters instead of executing `SET SESSION` / `RESET SESSION` queries.
 
 ### Query Execution
 
