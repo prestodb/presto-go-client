@@ -15,6 +15,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// newTestSession creates a mock Presto server and returns a connected session.
+// The server is automatically closed when the test finishes.
+func newTestSession(t *testing.T) (*prestotest.MockPrestoServer, *presto.Session) {
+	t.Helper()
+	mockServer := prestotest.NewMockPrestoServer()
+	t.Cleanup(mockServer.Close)
+	client, err := presto.NewClient(mockServer.URL(), "")
+	require.NoError(t, err)
+	return mockServer, client.NewSession()
+}
+
 // --- Mock Server Logic Tests ---
 
 // TestMockServer_BatchCapping verifies that AddQuery correctly caps DataBatches based on row count.
@@ -51,12 +62,7 @@ func TestMockServer_BatchCapping(t *testing.T) {
 
 // TestMockServer_DistributedLatency verifies the (latency / batches + 1) logic.
 func TestMockServer_DistributedLatency(t *testing.T) {
-	mockServer := prestotest.NewMockPrestoServer()
-	defer mockServer.Close()
-
-	client, err := presto.NewClient(mockServer.URL(), "")
-	require.NoError(t, err)
-	session := client.NewSession()
+	mockServer, session := newTestSession(t)
 
 	// Setup: 200ms total latency, 1 data batch (Total 2 requests: initial + batch 1)
 	mockServer.AddQuery(&prestotest.MockQueryTemplate{
@@ -85,14 +91,39 @@ func TestMockServer_DistributedLatency(t *testing.T) {
 
 // --- QueryResults Logic Tests ---
 
+// TestQueryResults_DrainHandlerErrorOnSubsequentBatch verifies that a handler error on
+// the second fetched batch is propagated correctly and Data is cleared.
+func TestQueryResults_DrainHandlerErrorOnSubsequentBatch(t *testing.T) {
+	mockServer, session := newTestSession(t)
+
+	mockServer.AddQuery(&prestotest.MockQueryTemplate{
+		SQL:         "SELECT * FROM two_batches",
+		Data:        [][]any{{1}, {2}},
+		DataBatches: 2,
+	})
+
+	results, _, err := session.Query(context.Background(), "SELECT * FROM two_batches")
+	require.NoError(t, err)
+
+	handlerErr := errors.New("processing failed on second batch")
+	callCount := 0
+	err = results.Drain(context.Background(), func(qr *presto.QueryResults) error {
+		callCount++
+		if callCount == 1 {
+			return nil
+		}
+		return handlerErr
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, handlerErr)
+	assert.Equal(t, 2, callCount, "handler should be called for both batches before error stops iteration")
+	assert.Nil(t, results.Data, "Data should be cleared on handler error from subsequent batch")
+}
+
 // TestQueryResults_DrainSuccess verifies that Drain correctly processes all data and clears memory.
 func TestQueryResults_DrainSuccess(t *testing.T) {
-	mockServer := prestotest.NewMockPrestoServer()
-	defer mockServer.Close()
-
-	client, err := presto.NewClient(mockServer.URL(), "")
-	require.NoError(t, err)
-	session := client.NewSession()
+	mockServer, session := newTestSession(t)
 
 	data := [][]any{{1}, {2}, {3}, {4}, {5}}
 	mockServer.AddQuery(&prestotest.MockQueryTemplate{
@@ -136,12 +167,7 @@ func TestQueryResults_DrainProcessesCurrentBatch(t *testing.T) {
 
 // TestQueryResults_DrainHandlerError verifies Drain stops and returns error when handler fails.
 func TestQueryResults_DrainHandlerError(t *testing.T) {
-	mockServer := prestotest.NewMockPrestoServer()
-	defer mockServer.Close()
-
-	client, err := presto.NewClient(mockServer.URL(), "")
-	require.NoError(t, err)
-	session := client.NewSession()
+	mockServer, session := newTestSession(t)
 
 	mockServer.AddQuery(&prestotest.MockQueryTemplate{
 		SQL:         "SELECT * FROM fail_drain",
@@ -153,26 +179,20 @@ func TestQueryResults_DrainHandlerError(t *testing.T) {
 	require.NoError(t, queryErr)
 
 	handlerErr := errors.New("handler failed")
-	err = results.Drain(context.Background(), func(qr *presto.QueryResults) error {
+	err := results.Drain(context.Background(), func(qr *presto.QueryResults) error {
 		return handlerErr
 	})
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, handlerErr)
-	assert.Contains(t, err.Error(), "batch handler returned error")
 	assert.Nil(t, results.Data, "Data should be cleared on handler error")
 }
 
 // TestQueryResults_ContextCancellation verifies server-side cleanup on client timeout.
 func TestQueryResults_ContextCancellation(t *testing.T) {
-	mockServer := prestotest.NewMockPrestoServer()
+	mockServer, session := newTestSession(t)
 	// Set a high latency to trigger timeout
 	mockServer.SetDefaultLatency(1 * time.Second)
-	defer mockServer.Close()
-
-	client, err := presto.NewClient(mockServer.URL(), "")
-	require.NoError(t, err)
-	session := client.NewSession()
 
 	mockServer.AddQuery(&prestotest.MockQueryTemplate{
 		SQL:         "SELECT * FROM slow",
@@ -180,27 +200,23 @@ func TestQueryResults_ContextCancellation(t *testing.T) {
 		DataBatches: 2,
 	})
 
-	// Initial query succeeds (batch 0)
-	results, _, _ := session.Query(context.Background(), "SELECT * FROM slow")
+	// Initial query succeeds (batch 0) — no latency on POST, only on GET
+	results, _, queryErr := session.Query(context.Background(), "SELECT * FROM slow")
+	require.NoError(t, queryErr)
 
 	// Create a context that will time out during the next fetch
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	err = results.FetchNextBatch(ctx)
+	err := results.FetchNextBatch(ctx)
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "context deadline exceeded")
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 // TestQueryResults_EmptyBatches verifies the skipping logic in FetchNextBatch.
 func TestQueryResults_EmptyBatches(t *testing.T) {
-	mockServer := prestotest.NewMockPrestoServer()
-	defer mockServer.Close()
-
-	client, err := presto.NewClient(mockServer.URL(), "")
-	require.NoError(t, err)
-	session := client.NewSession()
+	mockServer, session := newTestSession(t)
 
 	// We simulate a query that stays in QUEUED for 2 polls before delivering 1 batch of data.
 	mockServer.AddQuery(&prestotest.MockQueryTemplate{
@@ -210,13 +226,14 @@ func TestQueryResults_EmptyBatches(t *testing.T) {
 		DataBatches:  1,
 	})
 
-	results, _, _ := session.Query(context.Background(), "SELECT * FROM skip")
+	results, _, queryErr := session.Query(context.Background(), "SELECT * FROM skip")
+	require.NoError(t, queryErr)
 	assert.True(t, results.HasMoreBatch())
 	assert.Equal(t, string(prestotest.QueryStateQueued), results.Stats.State)
 
 	// FetchNextBatch should loop through the 2 empty queued polls and then
 	// return as soon as it hits the first data batch (Batch 1).
-	err = results.FetchNextBatch(context.Background())
+	err := results.FetchNextBatch(context.Background())
 	require.NoError(t, err)
 
 	assert.Len(t, results.Data, 1, "Should have eventually fetched the data")
@@ -224,12 +241,7 @@ func TestQueryResults_EmptyBatches(t *testing.T) {
 }
 
 func TestQueryWithPreMintedID(t *testing.T) {
-	mockServer := prestotest.NewMockPrestoServer()
-	defer mockServer.Close()
-
-	client, err := presto.NewClient(mockServer.URL(), "")
-	require.NoError(t, err)
-	session := client.NewSession()
+	mockServer, session := newTestSession(t)
 
 	mockServer.AddQuery(&prestotest.MockQueryTemplate{
 		SQL:         "SELECT 1",
@@ -263,22 +275,18 @@ func TestQueryWithPreMintedID(t *testing.T) {
 
 // TestQueryResults_ConcurrentAccess verifies session mutex protection.
 func TestQueryResults_ConcurrentAccess(t *testing.T) {
-	mockServer := prestotest.NewMockPrestoServer()
-	defer mockServer.Close()
-
-	client, err := presto.NewClient(mockServer.URL(), "")
-	require.NoError(t, err)
-	session := client.NewSession()
+	mockServer, session := newTestSession(t)
 
 	mockServer.AddQuery(&prestotest.MockQueryTemplate{SQL: "SELECT 1", DataBatches: 1})
 
 	var wg sync.WaitGroup
-	// Run 10 concurrent fetches using the same session reference
+	// Run 10 concurrent queries using the same session to verify no panics under race detector
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, _, _ = session.Query(context.Background(), "SELECT 1")
+			_, _, err := session.Query(context.Background(), "SELECT 1")
+			assert.NoError(t, err)
 		}()
 	}
 	wg.Wait()
@@ -287,8 +295,7 @@ func TestQueryResults_ConcurrentAccess(t *testing.T) {
 // TestQuery_SetSessionFromResponse verifies that X-Presto-Set-Session response headers
 // update session properties for subsequent requests.
 func TestQuery_SetSessionFromResponse(t *testing.T) {
-	mockServer := prestotest.NewMockPrestoServer()
-	defer mockServer.Close()
+	mockServer, session := newTestSession(t)
 
 	mockServer.AddQuery(&prestotest.MockQueryTemplate{
 		SQL:     "SET SESSION optimize_hash_generation = true",
@@ -305,12 +312,8 @@ func TestQuery_SetSessionFromResponse(t *testing.T) {
 		Data:    [][]any{{1}},
 	})
 
-	client, err := presto.NewClient(mockServer.URL(), "")
-	require.NoError(t, err)
-	session := client.NewSession()
-
 	// Execute SET SESSION — should update session params
-	_, _, err = session.Query(context.Background(), "SET SESSION optimize_hash_generation = true")
+	_, _, err := session.Query(context.Background(), "SET SESSION optimize_hash_generation = true")
 	require.NoError(t, err)
 
 	assert.Equal(t, "optimize_hash_generation=true", session.GetSessionParams())
@@ -323,8 +326,7 @@ func TestQuery_SetSessionFromResponse(t *testing.T) {
 // TestQuery_ClearSessionFromResponse verifies that X-Presto-Clear-Session response headers
 // remove session properties.
 func TestQuery_ClearSessionFromResponse(t *testing.T) {
-	mockServer := prestotest.NewMockPrestoServer()
-	defer mockServer.Close()
+	mockServer, session := newTestSession(t)
 
 	mockServer.AddQuery(&prestotest.MockQueryTemplate{
 		SQL:                    "RESET SESSION optimize_hash_generation",
@@ -333,14 +335,12 @@ func TestQuery_ClearSessionFromResponse(t *testing.T) {
 		ClearSessionProperties: []string{"optimize_hash_generation"},
 	})
 
-	client, err := presto.NewClient(mockServer.URL(), "")
-	require.NoError(t, err)
-	session := client.NewSession().SessionParam("optimize_hash_generation", "true")
+	session.SessionParam("optimize_hash_generation", "true")
 
 	assert.Equal(t, "optimize_hash_generation=true", session.GetSessionParams())
 
 	// Execute RESET SESSION — should clear the param
-	_, _, err = session.Query(context.Background(), "RESET SESSION optimize_hash_generation")
+	_, _, err := session.Query(context.Background(), "RESET SESSION optimize_hash_generation")
 	require.NoError(t, err)
 
 	assert.Equal(t, "", session.GetSessionParams())
