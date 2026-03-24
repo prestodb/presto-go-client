@@ -148,7 +148,8 @@ func (qr *QueryResults) FetchNextBatch(ctx context.Context) error {
 // ResultBatchHandler is a function type for processing batches of query results.
 type ResultBatchHandler func(qr *QueryResults) error
 
-// Drain fetches and processes all remaining batches of results for this query.
+// Drain processes data already present in the initial response, then fetches and
+// processes all remaining batches of results for this query.
 // It clears data after each batch to optimize memory usage.
 func (qr *QueryResults) Drain(ctx context.Context, handler ResultBatchHandler) error {
 	if qr == nil {
