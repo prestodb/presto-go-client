@@ -87,7 +87,9 @@ Interval types: `INTERVAL DAY TO SECOND` maps to `time.Duration`; `INTERVAL YEAR
 
 `BuildTLSConfig(caFile, certFile, keyFile, skipVerify)` is an exported helper for constructing `*tls.Config` — shared by the driver's DSN parsing and available to low-level `Client` API users.
 
-Varbinary values are base64-decoded from Presto's wire format. `time` and `time with time zone` types are parsed to `time.Time`. Closed connections return `driver.ErrBadConn`. The `prestoConn.closed` field uses `atomic.Bool` for thread-safe access.
+Varbinary values are base64-decoded from Presto's wire format. `time` and `time with time zone` types are parsed to `time.Time`. Closed connections return `driver.ErrBadConn`. Both `prestoConn.closed` and `prestoRows.closed` use `atomic.Bool` for thread-safe access.
+
+Parameter interpolation (`interpolateParams`) does not handle SQL comments (`--`, `/* */`); a `?` inside a comment will be treated as a placeholder.
 
 Transactions store the context from `BeginTx` and use it for `Commit`/`Rollback`, so the caller's deadline/cancellation applies to the entire transaction lifecycle.
 
@@ -100,6 +102,7 @@ Transactions store the context from `BeginTx` and use it for `Commit`/`Rollback`
 - **Internal tests** (`package presto`): `client_test.go`, `driver_internal_test.go`, `types_test.go` — access unexported symbols
 - **External tests** (`package presto_test`): `driver_test.go`, `query_test.go` — test through exported API using `prestotest.MockPrestoServer`
 - Mock server uses only stdlib `net/http`. Register queries with `AddQuery()`, control batching with `DataBatches`/`QueueBatches` fields
+- `query_test.go` uses a `newTestSession(t)` helper that creates a mock server + client + session with `t.Cleanup` for automatic teardown
 - Uses `testify/assert` and `testify/require`
 
 ### Trino Compatibility
