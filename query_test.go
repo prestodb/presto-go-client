@@ -85,6 +85,42 @@ func TestMockServer_DistributedLatency(t *testing.T) {
 
 // --- QueryResults Logic Tests ---
 
+// TestQueryResults_DrainHandlerErrorOnSubsequentBatch verifies that a handler error on
+// the second fetched batch is propagated correctly and Data is cleared.
+func TestQueryResults_DrainHandlerErrorOnSubsequentBatch(t *testing.T) {
+	mockServer := prestotest.NewMockPrestoServer()
+	defer mockServer.Close()
+
+	client, err := presto.NewClient(mockServer.URL(), "")
+	require.NoError(t, err)
+	session := client.NewSession()
+
+	mockServer.AddQuery(&prestotest.MockQueryTemplate{
+		SQL:         "SELECT * FROM two_batches",
+		Data:        [][]any{{1}, {2}},
+		DataBatches: 2,
+	})
+
+	results, _, err := session.Query(context.Background(), "SELECT * FROM two_batches")
+	require.NoError(t, err)
+
+	handlerErr := errors.New("processing failed on second batch")
+	callCount := 0
+	err = results.Drain(context.Background(), func(qr *presto.QueryResults) error {
+		callCount++
+		if callCount == 1 {
+			return nil
+		}
+		return handlerErr
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, handlerErr)
+	assert.Contains(t, err.Error(), "batch handler returned error")
+	assert.Equal(t, 2, callCount, "handler should be called for both batches before error stops iteration")
+	assert.Nil(t, results.Data, "Data should be cleared on handler error from subsequent batch")
+}
+
 // TestQueryResults_DrainSuccess verifies that Drain correctly processes all data and clears memory.
 func TestQueryResults_DrainSuccess(t *testing.T) {
 	mockServer := prestotest.NewMockPrestoServer()
