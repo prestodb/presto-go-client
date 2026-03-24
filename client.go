@@ -308,12 +308,25 @@ func (s *Session) NewRequest(method, urlStr string, body any, options ...Request
 }
 
 func (s *Session) applyHeaders(req *http.Request) {
+	// Snapshot isTrino before taking the session lock to avoid nested locking
+	// (CanonicalHeader takes clientMu; holding s.mu first would create a lock-order risk).
+	s.client.clientMu.RLock()
+	isTrino := s.client.isTrino
+	s.client.clientMu.RUnlock()
+
+	canonical := func(name string) string {
+		if isTrino {
+			return strings.Replace(name, "X-Presto", "X-Trino", 1)
+		}
+		return name
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	// 1. Identity & Auth
 	if s.userInfo != nil {
-		req.Header.Set(s.client.CanonicalHeader(UserHeader), s.userInfo.Username())
+		req.Header.Set(canonical(UserHeader), s.userInfo.Username())
 		if s.basicAuth != "" {
 			req.Header.Set("Authorization", "Basic "+s.basicAuth)
 		} else if pass, ok := s.userInfo.Password(); ok {
@@ -323,30 +336,31 @@ func (s *Session) applyHeaders(req *http.Request) {
 
 	// 2. Contextual Headers
 	if s.catalog != "" {
-		req.Header.Set(s.client.CanonicalHeader(CatalogHeader), s.catalog)
+		req.Header.Set(canonical(CatalogHeader), s.catalog)
 	}
 	if s.schema != "" {
-		req.Header.Set(s.client.CanonicalHeader(SchemaHeader), s.schema)
+		req.Header.Set(canonical(SchemaHeader), s.schema)
 	}
 	if s.timezone != "" {
-		req.Header.Set(s.client.CanonicalHeader(TimeZoneHeader), s.timezone)
+		req.Header.Set(canonical(TimeZoneHeader), s.timezone)
 	}
 	if s.clientInfo != "" {
-		req.Header.Set(s.client.CanonicalHeader(ClientInfoHeader), s.clientInfo)
+		req.Header.Set(canonical(ClientInfoHeader), s.clientInfo)
 	}
 	if s.source != "" {
-		req.Header.Set(s.client.CanonicalHeader(SourceHeader), s.source)
+		req.Header.Set(canonical(SourceHeader), s.source)
 	}
 
 	// 3. State Headers
 	if s.transactionId != "" {
-		req.Header.Set(s.client.CanonicalHeader(TransactionHeader), s.transactionId)
+		req.Header.Set(canonical(TransactionHeader), s.transactionId)
 	}
 	if len(s.sessionParams) > 0 {
-		req.Header.Set(s.client.CanonicalHeader(SessionHeader), s.client.generateSessionHeader(s.sessionParams))
+		// generateSessionHeader is lock-free; safe to call inside s.mu
+		req.Header.Set(canonical(SessionHeader), s.client.generateSessionHeader(s.sessionParams))
 	}
 	if len(s.clientTags) > 0 {
-		req.Header.Set(s.client.CanonicalHeader(ClientTagHeader), strings.Join(s.clientTags, ","))
+		req.Header.Set(canonical(ClientTagHeader), strings.Join(s.clientTags, ","))
 	}
 }
 
@@ -478,12 +492,24 @@ func isRetryableNetError(err error) bool {
 }
 
 func (s *Session) updateTransactionState(resp *http.Response) {
+	// Snapshot isTrino before taking the session lock (same reason as applyHeaders).
+	s.client.clientMu.RLock()
+	isTrino := s.client.isTrino
+	s.client.clientMu.RUnlock()
+
+	canonical := func(name string) string {
+		if isTrino {
+			return strings.Replace(name, "X-Presto", "X-Trino", 1)
+		}
+		return name
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if id := resp.Header.Get(s.client.CanonicalHeader(StartedTransactionHeader)); id != "" {
+	if id := resp.Header.Get(canonical(StartedTransactionHeader)); id != "" {
 		s.transactionId = id
-	} else if resp.Header.Get(s.client.CanonicalHeader(ClearTransactionHeader)) == "true" {
+	} else if resp.Header.Get(canonical(ClearTransactionHeader)) == "true" {
 		s.transactionId = ""
 	}
 }
