@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -255,7 +256,10 @@ func (m *MockPrestoServer) handleCancelQuery(w http.ResponseWriter, r *http.Requ
 func writeJSON(w http.ResponseWriter, statusCode int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	_ = json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		// Header already sent; log rather than return HTTP error
+		log.Printf("prestotest: writeJSON encode error: %v", err)
+	}
 }
 
 // sendQueryResponse prepares a JSON payload and applies hierarchical latency.

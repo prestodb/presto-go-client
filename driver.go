@@ -227,6 +227,8 @@ func valueToSQL(v driver.Value) (string, error) {
 
 // interpolateParams replaces ? placeholders in the query with SQL literals.
 // It skips ? characters inside single-quoted string literals.
+// Note: SQL comments (-- and /* */) are not handled; a ? inside a comment
+// will be treated as a placeholder.
 func interpolateParams(query string, args []driver.Value) (string, error) {
 	if len(args) == 0 {
 		return query, nil
@@ -810,10 +812,7 @@ func (c *prestoConn) QueryContext(ctx context.Context, query string, args []driv
 	if c.closed.Load() {
 		return nil, driver.ErrBadConn
 	}
-	positional, err := namedToPositional(args)
-	if err != nil {
-		return nil, err
-	}
+	positional := namedToPositional(args)
 	interpolated, err := interpolateParams(query, positional)
 	if err != nil {
 		return nil, err
@@ -839,10 +838,7 @@ func (c *prestoConn) ExecContext(ctx context.Context, query string, args []drive
 	if c.closed.Load() {
 		return nil, driver.ErrBadConn
 	}
-	positional, err := namedToPositional(args)
-	if err != nil {
-		return nil, err
-	}
+	positional := namedToPositional(args)
 	interpolated, err := interpolateParams(query, positional)
 	if err != nil {
 		return nil, err
@@ -869,12 +865,12 @@ func (c *prestoConn) execDirect(ctx context.Context, query string) (driver.Resul
 }
 
 // namedToPositional converts named values to positional driver.Value slice.
-func namedToPositional(args []driver.NamedValue) ([]driver.Value, error) {
+func namedToPositional(args []driver.NamedValue) []driver.Value {
 	positional := make([]driver.Value, len(args))
 	for i, arg := range args {
 		positional[i] = arg.Value
 	}
-	return positional, nil
+	return positional
 }
 
 // --- Result ---
@@ -910,7 +906,7 @@ type prestoRows struct {
 	rows [][]any
 	// Current position within the batch
 	pos    int
-	closed bool
+	closed atomic.Bool
 }
 
 var _ driver.Rows = (*prestoRows)(nil)
@@ -958,13 +954,13 @@ func (r *prestoRows) Columns() []string {
 
 // Close implements driver.Rows.
 func (r *prestoRows) Close() error {
-	r.closed = true
+	r.closed.Store(true)
 	return nil
 }
 
 // Next implements driver.Rows.
 func (r *prestoRows) Next(dest []driver.Value) error {
-	if r.closed {
+	if r.closed.Load() {
 		return io.EOF
 	}
 

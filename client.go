@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -439,8 +440,11 @@ func (s *Session) Do(ctx context.Context, req *http.Request, v any) (*http.Respo
 			continue
 		}
 
-		body, _ := io.ReadAll(resp.Body)
+		body, readErr := io.ReadAll(resp.Body)
 		resp.Body.Close()
+		if readErr != nil {
+			return resp, fmt.Errorf("presto server error: %d (failed to read body: %w)", resp.StatusCode, readErr)
+		}
 		return resp, fmt.Errorf("presto server error: %d: %s", resp.StatusCode, string(body))
 	}
 	return nil, fmt.Errorf("max retries exceeded")
@@ -626,11 +630,12 @@ func (c *Client) GenerateSessionParamsHeaderValue(params map[string]any) string 
 }
 
 func (c *Client) generateSessionHeader(params map[string]any) string {
-	var pairs []string
+	pairs := make([]string, 0, len(params))
 	for k, v := range params {
 		val := url.QueryEscape(fmt.Sprintf("%v", v))
 		pairs = append(pairs, fmt.Sprintf("%s=%s", k, val))
 	}
+	sort.Strings(pairs)
 	return strings.Join(pairs, ",")
 }
 
