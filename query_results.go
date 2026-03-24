@@ -154,6 +154,19 @@ func (qr *QueryResults) Drain(ctx context.Context, handler ResultBatchHandler) e
 	if qr == nil {
 		return errors.New("cannot drain results: nil QueryResults")
 	}
+
+	// Process data already present in the initial response.
+	if len(qr.Data) > 0 {
+		if handler != nil {
+			if err := handler(qr); err != nil {
+				qr.Data = nil
+				return fmt.Errorf("batch handler returned error for query %s: %w", qr.Id, err)
+			}
+		}
+		// Aggressively clear Data to prevent memory bloat during large drains
+		qr.Data = nil
+	}
+
 	for qr.HasMoreBatch() {
 		if err := qr.FetchNextBatch(ctx); err != nil {
 			return fmt.Errorf("drain operation failed: %w", err)

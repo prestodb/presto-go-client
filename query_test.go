@@ -2,6 +2,7 @@ package presto_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
@@ -114,6 +115,23 @@ func TestQueryResults_DrainSuccess(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 5, rowCount)
 	assert.Empty(t, results.Data, "Data should be cleared after Drain completes")
+}
+
+func TestQueryResults_DrainProcessesCurrentBatch(t *testing.T) {
+	results := &presto.QueryResults{
+		Id:   "query-with-initial-batch",
+		Data: []json.RawMessage{json.RawMessage(`[1]`), json.RawMessage(`[2]`)},
+	}
+
+	rowCount := 0
+	err := results.Drain(context.Background(), func(qr *presto.QueryResults) error {
+		rowCount += len(qr.Data)
+		return nil
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, rowCount, "Drain should process rows already present in the initial response")
+	assert.Nil(t, results.Data, "Data should be cleared after Drain completes")
 }
 
 // TestQueryResults_DrainHandlerError verifies Drain stops and returns error when handler fails.
