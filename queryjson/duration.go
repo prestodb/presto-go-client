@@ -36,6 +36,6 @@ func (d *Duration) UnmarshalJSON(bytes []byte) error {
 		}
 		return nil
 	default:
-		return fmt.Errorf("invalid duration")
+		return fmt.Errorf("invalid duration: expected float64 or string, got %T", value)
 	}
 }

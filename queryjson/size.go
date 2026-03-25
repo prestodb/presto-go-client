@@ -28,7 +28,7 @@ func (s *SISize) UnmarshalJSON(bytes []byte) error {
 		*s = SISize(sz)
 		return nil
 	default:
-		return fmt.Errorf("invalid SI size")
+		return fmt.Errorf("invalid SI size: expected float64 or string, got %T", value)
 	}
 }
 

@@ -1,9 +1,9 @@
 package queryjson
 
 import (
-	"bytes"
 	"encoding/json"
 	"strconv"
+	"strings"
 )
 
 // StageInfo represents the execution information for a query stage.
@@ -65,7 +65,7 @@ type RawPlanWrapper struct {
 //  5. Add this stage's plan to the assembled query plan map
 func (s *StageInfo) processForInsert(flattened *[]*StageInfo, queryPlan map[string]RawPlanWrapper) error {
 	// Stage IDs are formatted as "queryId.index"; we only keep the index for the database.
-	if index := bytes.IndexByte([]byte(s.StageId), '.'); index > 0 && index+1 < len(s.StageId) {
+	if index := strings.IndexByte(s.StageId, '.'); index > 0 && index+1 < len(s.StageId) {
 		s.StageId = s.StageId[index+1:]
 	}
 	// Trino exposes stats directly on StageInfo as "stageStats", while Presto nests them
