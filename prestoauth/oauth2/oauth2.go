@@ -6,6 +6,7 @@ package oauth2
 import (
 	"database/sql/driver"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -82,8 +83,10 @@ func NewRequestOption(cfg Config) (presto.RequestOption, error) {
 			ts := ccCfg.TokenSource(req.Context())
 			newToken, err := ts.Token()
 			if err != nil {
-				// Cannot return an error from a RequestOption. The server will
-				// return 401 if the header is missing, surfacing as a query error.
+				// Cannot return an error from a RequestOption; log so auth
+				// failures are diagnosable. The server will return 401 if
+				// the header is missing, surfacing as a query error.
+				log.Printf("oauth2: failed to obtain token: %v", err)
 				return
 			}
 			cachedToken = newToken
@@ -195,6 +198,7 @@ func TokenSource(ts oauth2.TokenSource) presto.RequestOption {
 	return func(req *http.Request) {
 		token, err := ts.Token()
 		if err != nil {
+			log.Printf("oauth2: failed to obtain token from TokenSource: %v", err)
 			return
 		}
 		token.SetAuthHeader(req)

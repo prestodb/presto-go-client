@@ -28,6 +28,7 @@ type QueryInfo struct {
 	FlattenedStageList     []*StageInfo
 	ParsedFailureInfo      *FailureInfo
 	AssembledQueryPlanJson string `presto_query_plans:"json_plan"`
+	prepared               bool
 }
 
 // trinoFlatStages represents the newer Trino format where stages are a flat list
@@ -77,6 +78,9 @@ type QueryStats struct {
 // parses failure info, calculates derived metrics, flattens stage tree,
 // and assembles query plans.
 func (q *QueryInfo) PrepareForInsert() error {
+	if q.prepared {
+		return nil
+	}
 	if q.FailureInfo != nil {
 		q.ParsedFailureInfo = new(FailureInfo)
 		if err := json.Unmarshal(*q.FailureInfo, q.ParsedFailureInfo); err != nil {
@@ -84,12 +88,12 @@ func (q *QueryInfo) PrepareForInsert() error {
 		}
 	}
 	if q.QueryStats != nil {
-		if t := q.QueryStats.ExecutionTime.Milliseconds(); t > 0 {
-			q.QueryStats.BytesPerSec = int64(q.QueryStats.RawInputDataSize) / t
+		if t := q.QueryStats.ExecutionTime.Seconds(); t > 0 {
+			q.QueryStats.BytesPerSec = int64(float64(q.QueryStats.RawInputDataSize) / t)
 		}
-		if c := q.QueryStats.TotalCpuTime.Milliseconds(); c > 0 {
-			q.QueryStats.BytesPerCPUSec = int64(q.QueryStats.RawInputDataSize) / c
-			q.QueryStats.RowsPerCPUSec = q.QueryStats.RawInputPositions / c
+		if c := q.QueryStats.TotalCpuTime.Seconds(); c > 0 {
+			q.QueryStats.BytesPerCPUSec = int64(float64(q.QueryStats.RawInputDataSize) / c)
+			q.QueryStats.RowsPerCPUSec = int64(float64(q.QueryStats.RawInputPositions) / c)
 		}
 		q.QueryStats.StageCount = len(q.QueryStats.StageGcStatistics)
 	}
@@ -131,5 +135,6 @@ func (q *QueryInfo) PrepareForInsert() error {
 	} else {
 		q.AssembledQueryPlanJson = string(planJson)
 	}
+	q.prepared = true
 	return nil
 }

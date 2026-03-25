@@ -366,7 +366,9 @@ func (s *Session) applyHeaders(req *http.Request) {
 
 // --- Execution & Transaction Synchronization ---
 
-// Do executes the request and automatically manages transaction state
+// Do executes the request and automatically manages transaction state.
+// When error is non-nil, the response may still be non-nil (e.g., on non-2xx status codes)
+// but its Body has been fully consumed and closed.
 func (s *Session) Do(ctx context.Context, req *http.Request, v any) (*http.Response, error) {
 	req = req.WithContext(ctx)
 

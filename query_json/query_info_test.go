@@ -135,3 +135,92 @@ func TestPrepareForInsert_NoStages(t *testing.T) {
 	assert.Empty(t, qi.FlattenedStageList)
 	assert.Equal(t, "{}", qi.AssembledQueryPlanJson)
 }
+
+func TestPrepareForInsert_DerivedStats(t *testing.T) {
+	raw := `{
+		"queryId": "test_stats",
+		"state": "FINISHED",
+		"query": "SELECT 1",
+		"queryStats": {
+			"createTime": "2026-01-01T00:00:00Z",
+			"executionTime": "2.00s",
+			"totalCpuTime": "4.00s",
+			"rawInputDataSize": "1000B",
+			"rawInputPositions": 200
+		}
+	}`
+
+	var qi QueryInfo
+	require.NoError(t, json.Unmarshal([]byte(raw), &qi))
+	require.NoError(t, qi.PrepareForInsert())
+
+	// 1000 bytes / 2 seconds = 500 bytes/sec
+	assert.Equal(t, int64(500), qi.QueryStats.BytesPerSec)
+	// 1000 bytes / 4 seconds = 250 bytes/cpu-sec
+	assert.Equal(t, int64(250), qi.QueryStats.BytesPerCPUSec)
+	// 200 rows / 4 seconds = 50 rows/cpu-sec
+	assert.Equal(t, int64(50), qi.QueryStats.RowsPerCPUSec)
+}
+
+func TestPrepareForInsert_DerivedStats_SubSecond(t *testing.T) {
+	// Sub-second durations exercise the actual bug fix: the old code divided
+	// by milliseconds, producing bytes/ms instead of bytes/sec (off by 1000x).
+	raw := `{
+		"queryId": "test_subsecond",
+		"state": "FINISHED",
+		"query": "SELECT 1",
+		"queryStats": {
+			"createTime": "2026-01-01T00:00:00Z",
+			"executionTime": "0.50s",
+			"totalCpuTime": "0.25s",
+			"rawInputDataSize": "1000B",
+			"rawInputPositions": 100
+		}
+	}`
+
+	var qi QueryInfo
+	require.NoError(t, json.Unmarshal([]byte(raw), &qi))
+	require.NoError(t, qi.PrepareForInsert())
+
+	// 1000 bytes / 0.5 seconds = 2000 bytes/sec (old code would give 1000/500 = 2)
+	assert.Equal(t, int64(2000), qi.QueryStats.BytesPerSec)
+	// 1000 bytes / 0.25 seconds = 4000 bytes/cpu-sec
+	assert.Equal(t, int64(4000), qi.QueryStats.BytesPerCPUSec)
+	// 100 rows / 0.25 seconds = 400 rows/cpu-sec
+	assert.Equal(t, int64(400), qi.QueryStats.RowsPerCPUSec)
+}
+
+func TestPrepareForInsert_Idempotent(t *testing.T) {
+	raw := `{
+		"queryId": "test_idempotent",
+		"state": "FINISHED",
+		"query": "SELECT 1",
+		"queryStats": {
+			"createTime": "2026-01-01T00:00:00Z"
+		},
+		"outputStage": {
+			"stageId": "test_idempotent.0",
+			"plan": {"jsonRepresentation": "{\"id\":\"0\"}"},
+			"latestAttemptExecutionInfo": {
+				"state": "FINISHED",
+				"stats": {
+					"totalTasks": 1,
+					"gcInfo": {"stageExecutionId": 0}
+				}
+			},
+			"subStages": []
+		}
+	}`
+
+	var qi QueryInfo
+	require.NoError(t, json.Unmarshal([]byte(raw), &qi))
+	require.NoError(t, qi.PrepareForInsert())
+
+	assert.Len(t, qi.FlattenedStageList, 1)
+	firstResult := qi.AssembledQueryPlanJson
+
+	// Second call should be a no-op — same results, no error
+	require.NoError(t, qi.PrepareForInsert())
+	assert.Len(t, qi.FlattenedStageList, 1)
+	assert.Equal(t, firstResult, qi.AssembledQueryPlanJson)
+}

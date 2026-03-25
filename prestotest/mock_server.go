@@ -215,7 +215,11 @@ func (m *MockPrestoServer) handleQueryInternal(w http.ResponseWriter, r *http.Re
 }
 
 func (m *MockPrestoServer) handleFetchNextBatch(w http.ResponseWriter, r *http.Request) {
-	batchID, _ := strconv.Atoi(r.PathValue("batchId"))
+	batchID, err := strconv.Atoi(r.PathValue("batchId"))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid batchId: %v", err), http.StatusBadRequest)
+		return
+	}
 	m.sendQueryResponse(r.Context(), w, r.PathValue("queryId"), batchID)
 }
 

@@ -7,6 +7,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -94,9 +95,12 @@ func NewRequestOption(cfg Config) (presto.RequestOption, io.Closer, error) {
 			spn = "HTTP/" + req.URL.Hostname()
 		}
 		// SetSPNEGOHeader adds the Authorization: Negotiate header.
-		// Errors are silently ignored here; the server will return 401
-		// if the token is missing, which surfaces as a query error.
-		_ = spnego.SetSPNEGOHeader(cl, req, spn)
+		// Cannot return an error from a RequestOption; log so auth
+		// failures are diagnosable. The server will return 401 if
+		// the header is missing, surfacing as a query error.
+		if err := spnego.SetSPNEGOHeader(cl, req, spn); err != nil {
+			log.Printf("kerberos: failed to set SPNEGO header for SPN %s: %v", spn, err)
+		}
 	}
 
 	return opt, closer, nil

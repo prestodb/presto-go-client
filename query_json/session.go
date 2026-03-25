@@ -1,8 +1,8 @@
 package query_json
 
 import (
-	"bytes"
 	"encoding/json"
+	"strings"
 )
 
 // Session represents the session context from a Presto query JSON.
@@ -26,29 +26,33 @@ type Session struct {
 // PrepareForInsert formats session properties into a {key=value, ...} string for database
 // insertion. This uses the Presto session properties wire format (not standard JSON).
 func (s *Session) PrepareForInsert() {
-	b := bytes.Buffer{}
+	var b strings.Builder
 	b.WriteString("{")
+	first := true
 	for k, v := range s.SystemProperties {
+		if !first {
+			b.WriteString(", ")
+		}
 		b.WriteString(k)
 		b.WriteString("=")
 		b.WriteString(v)
-		b.WriteString(", ")
+		first = false
 	}
 	for catalog, props := range s.CatalogProperties {
 		for k, v := range props {
-			b.WriteString(catalog + "." + k)
+			if !first {
+				b.WriteString(", ")
+			}
+			b.WriteString(catalog)
+			b.WriteString(".")
+			b.WriteString(k)
 			b.WriteString("=")
 			b.WriteString(v)
-			b.WriteString(", ")
+			first = false
 		}
 	}
-	if b.Len() == 1 {
-		s.SessionPropertiesJson = "{}"
-	} else {
-		jsonBytes := b.Bytes()
-		jsonBytes[len(jsonBytes)-2] = '}'
-		s.SessionPropertiesJson = string(jsonBytes[:len(jsonBytes)-1])
-	}
+	b.WriteString("}")
+	s.SessionPropertiesJson = b.String()
 }
 
 // CollectSessionProperties returns a flattened map of all session properties
