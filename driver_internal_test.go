@@ -594,7 +594,7 @@ func TestConnectorEnsureClient_RetryAfterTransientFailure(t *testing.T) {
 	assert.Contains(t, err.Error(), "presto connector:")
 
 	// Verify that the connector is NOT permanently poisoned
-	assert.False(t, c.initialized.Load(), "connector should not be marked initialized after failure")
+	assert.Nil(t, c.client.Load(), "client should remain nil after failure")
 
 	// Fix the config (remove bad TLS path) and retry.
 	// Note: cfg must only be replaced before successful initialization;
@@ -620,7 +620,7 @@ func TestConnectorEnsureClient_SetsIsTrinoViaMethod(t *testing.T) {
 
 	// Verify isTrino was set on the client (single-goroutine test,
 	// safe to read after Connect returns)
-	assert.True(t, c.client.isTrino)
+	assert.True(t, c.client.Load().isTrino)
 }
 
 func TestIntervalDayToSecond_RoundTrip(t *testing.T) {

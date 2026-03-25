@@ -488,11 +488,9 @@ func isRetryableNetError(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
-	if _, ok := errors.AsType[net.Error](err); ok {
-		return true
-	}
-	var opErr *net.OpError
-	return errors.As(err, &opErr)
+	// net.Error covers *net.OpError and all other network-layer errors.
+	_, ok := errors.AsType[net.Error](err)
+	return ok
 }
 
 func (s *Session) updateTransactionState(resp *http.Response) {

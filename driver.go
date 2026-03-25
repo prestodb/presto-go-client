@@ -643,10 +643,9 @@ func WithHTTPClient(hc *http.Client) ConnectorOption {
 // (e.g., DNS hiccups) do not permanently poison the connector.
 type prestoConnector struct {
 	cfg          *dsnConfig
-	client       *Client
+	client       atomic.Pointer[Client]
 	httpClient   *http.Client
 	initMu       sync.Mutex
-	initialized  atomic.Bool
 	sessionSetup func(*Session)
 }
 
@@ -669,12 +668,12 @@ func NewConnector(dsn string, opts ...ConnectorOption) (driver.Connector, error)
 // ensureClient performs one-time initialization of the shared Client.
 // Uses double-checked locking so transient errors can be retried.
 func (c *prestoConnector) ensureClient() error {
-	if c.initialized.Load() {
+	if c.client.Load() != nil {
 		return nil
 	}
 	c.initMu.Lock()
 	defer c.initMu.Unlock()
-	if c.initialized.Load() {
+	if c.client.Load() != nil {
 		return nil
 	}
 
@@ -684,7 +683,6 @@ func (c *prestoConnector) ensureClient() error {
 	}
 	client.IsTrino(c.cfg.isTrino)
 
-	// Apply TLS configuration from DSN parameters
 	tlsCfg, err := c.cfg.buildTLSConfig()
 	if err != nil {
 		return err
@@ -693,18 +691,16 @@ func (c *prestoConnector) ensureClient() error {
 		client.TLSConfig(tlsCfg)
 	}
 
-	// Apply custom HTTP client if provided via connector option
 	if c.httpClient != nil {
 		client.HTTPClient(c.httpClient)
 	}
 
-	// c.client must be assigned before initialized is set to true.
 	// Per the Go memory model (https://go.dev/ref/mem), an atomic
-	// store-release followed by an atomic load-acquire on the same
-	// variable creates a happens-before edge. Readers outside initMu
-	// that observe initialized==true are guaranteed to see c.client.
-	c.client = client
-	c.initialized.Store(true)
+	// store-release followed by an atomic load-acquire creates a
+	// happens-before edge. Readers outside initMu that observe a
+	// non-nil client.Load() are guaranteed to see the fully
+	// initialized *Client.
+	c.client.Store(client)
 	return nil
 }
 
@@ -714,7 +710,7 @@ func (c *prestoConnector) Connect(ctx context.Context) (driver.Conn, error) {
 		return nil, fmt.Errorf("presto connector: %w", err)
 	}
 
-	session := c.client.NewSession()
+	session := c.client.Load().NewSession()
 
 	if c.cfg.user != "" {
 		if c.cfg.password != "" {

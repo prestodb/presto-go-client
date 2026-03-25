@@ -30,31 +30,16 @@ func (s *Session) PrepareForInsert() {
 	if s == nil {
 		return
 	}
-	// Collect all key=value pairs, then sort for deterministic output.
-	pairs := make([]string, 0, len(s.SystemProperties))
+	// Collect all key=value pairs, then sort once for deterministic output.
+	pairs := make([]string, 0, len(s.SystemProperties)+len(s.CatalogProperties))
 	for k, v := range s.SystemProperties {
 		pairs = append(pairs, k+"="+v)
 	}
-
-	// Catalog properties: sort catalogs, then sort keys within each catalog.
-	catalogs := make([]string, 0, len(s.CatalogProperties))
-	for catalog := range s.CatalogProperties {
-		catalogs = append(catalogs, catalog)
-	}
-	sort.Strings(catalogs)
-	for _, catalog := range catalogs {
-		props := s.CatalogProperties[catalog]
-		keys := make([]string, 0, len(props))
-		for k := range props {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			pairs = append(pairs, catalog+"."+k+"="+props[k])
+	for catalog, props := range s.CatalogProperties {
+		for k, v := range props {
+			pairs = append(pairs, catalog+"."+k+"="+v)
 		}
 	}
-
-	// Sort system properties (appended first) together with catalog properties.
 	sort.Strings(pairs)
 	s.SessionPropertiesJson = "{" + strings.Join(pairs, ", ") + "}"
 }
