@@ -9,7 +9,8 @@ import (
 // ErrorResponse represents an HTTP error response from the Presto server.
 // It wraps the HTTP response and provides access to the error message.
 type ErrorResponse struct {
-	// Response is the original HTTP response
+	// Response is the original HTTP response. Note: the Body has already been
+	// read and closed; its contents are available in the Message field.
 	Response *http.Response
 
 	// Message is the error message from the response body

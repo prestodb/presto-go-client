@@ -257,7 +257,9 @@ func TestExample_LowLevel_BasicQuery(t *testing.T) {
 	err = results.Drain(ctx, func(qr *presto.QueryResults) error {
 		for _, row := range qr.Data {
 			var parsed []any
-			json.Unmarshal(row, &parsed)
+			if err := json.Unmarshal(row, &parsed); err != nil {
+				return fmt.Errorf("unmarshal row: %w", err)
+			}
 			fmt.Println(parsed)
 		}
 		return nil
@@ -285,7 +287,8 @@ func TestExample_LowLevel_BatchFetching(t *testing.T) {
 	}
 
 	// Manual batch-by-batch fetching for full control.
-	totalRows := 0
+	// Process any data from the initial response first.
+	totalRows := len(results.Data)
 	for results.HasMoreBatch() {
 		if err := results.FetchNextBatch(ctx); err != nil {
 			log.Fatal(err)

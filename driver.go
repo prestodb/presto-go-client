@@ -541,11 +541,20 @@ func parseIntervalDayToSecond(s string) (time.Duration, error) {
 		return 0, fmt.Errorf("cannot parse interval day to second seconds %q: %w", secParts[0], err)
 	}
 
-	var millis int64
+	var nanos int64
 	if len(secParts) == 2 {
-		millis, err = strconv.ParseInt(secParts[1], 10, 64)
+		frac := secParts[1]
+		// Normalize fractional seconds to 9 digits (nanoseconds).
+		// Presto sends 3 digits (millis), but handle any precision safely.
+		switch {
+		case len(frac) > 9:
+			frac = frac[:9] // truncate beyond nanosecond precision
+		case len(frac) < 9:
+			frac = frac + strings.Repeat("0", 9-len(frac))
+		}
+		nanos, err = strconv.ParseInt(frac, 10, 64)
 		if err != nil {
-			return 0, fmt.Errorf("cannot parse interval day to second millis %q: %w", secParts[1], err)
+			return 0, fmt.Errorf("cannot parse interval day to second fractional seconds %q: %w", secParts[1], err)
 		}
 	}
 
@@ -553,7 +562,7 @@ func parseIntervalDayToSecond(s string) (time.Duration, error) {
 		time.Duration(hours)*time.Hour +
 		time.Duration(minutes)*time.Minute +
 		time.Duration(seconds)*time.Second +
-		time.Duration(millis)*time.Millisecond
+		time.Duration(nanos)*time.Nanosecond
 
 	if negative {
 		d = -d
@@ -629,13 +638,15 @@ func WithHTTPClient(hc *http.Client) ConnectorOption {
 }
 
 // prestoConnector implements driver.Connector. It creates a shared Client
-// (via sync.Once) and produces new Sessions for each Connect call.
+// (via initMu) and produces new Sessions for each Connect call.
+// Initialization uses a mutex instead of sync.Once so that transient errors
+// (e.g., DNS hiccups) do not permanently poison the connector.
 type prestoConnector struct {
 	cfg          *dsnConfig
 	client       *Client
 	httpClient   *http.Client
-	once         sync.Once
-	err          error
+	initMu       sync.Mutex
+	initialized  atomic.Bool
 	sessionSetup func(*Session)
 }
 
@@ -655,32 +666,50 @@ func NewConnector(dsn string, opts ...ConnectorOption) (driver.Connector, error)
 	return c, nil
 }
 
+// ensureClient performs one-time initialization of the shared Client.
+// Uses double-checked locking so transient errors can be retried.
+func (c *prestoConnector) ensureClient() error {
+	if c.initialized.Load() {
+		return nil
+	}
+	c.initMu.Lock()
+	defer c.initMu.Unlock()
+	if c.initialized.Load() {
+		return nil
+	}
+
+	client, err := NewClient(c.cfg.serverURL())
+	if err != nil {
+		return err
+	}
+	client.IsTrino(c.cfg.isTrino)
+
+	// Apply TLS configuration from DSN parameters
+	tlsCfg, err := c.cfg.buildTLSConfig()
+	if err != nil {
+		return err
+	}
+	if tlsCfg != nil {
+		client.TLSConfig(tlsCfg)
+	}
+
+	// Apply custom HTTP client if provided via connector option
+	if c.httpClient != nil {
+		client.HTTPClient(c.httpClient)
+	}
+
+	// c.client must be assigned before initialized is set to true.
+	// Readers outside initMu rely on the atomic store acting as a
+	// release fence to see the c.client write.
+	c.client = client
+	c.initialized.Store(true)
+	return nil
+}
+
 // Connect implements driver.Connector.
 func (c *prestoConnector) Connect(ctx context.Context) (driver.Conn, error) {
-	c.once.Do(func() {
-		c.client, c.err = NewClient(c.cfg.serverURL())
-		if c.err != nil {
-			return
-		}
-		c.client.isTrino = c.cfg.isTrino
-
-		// Apply TLS configuration from DSN parameters
-		tlsCfg, err := c.cfg.buildTLSConfig()
-		if err != nil {
-			c.err = err
-			return
-		}
-		if tlsCfg != nil {
-			c.client.TLSConfig(tlsCfg)
-		}
-
-		// Apply custom HTTP client if provided via connector option
-		if c.httpClient != nil {
-			c.client.HTTPClient(c.httpClient)
-		}
-	})
-	if c.err != nil {
-		return nil, c.err
+	if err := c.ensureClient(); err != nil {
+		return nil, fmt.Errorf("presto connector: %w", err)
 	}
 
 	session := c.client.NewSession()

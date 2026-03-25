@@ -66,7 +66,7 @@ func TestNewRequestOption_ClientCredentials(t *testing.T) {
 	// Set up a mock token endpoint
 	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"access_token":"test-token-123","token_type":"Bearer","expires_in":3600}`))
+		_, _ = w.Write([]byte(`{"access_token":"test-token-123","token_type":"Bearer","expires_in":3600}`))
 	}))
 	defer tokenServer.Close()
 

@@ -105,7 +105,9 @@ func main() {
 	err = results.Drain(ctx, func(qr *presto.QueryResults) error {
 		for _, row := range qr.Data {
 			var parsed []any
-			json.Unmarshal(row, &parsed)
+			if err := json.Unmarshal(row, &parsed); err != nil {
+				log.Fatal(err)
+			}
 			fmt.Println(parsed)
 		}
 		return nil
@@ -263,7 +265,8 @@ results, _, err := session.Query(ctx, "SELECT * FROM orders WHERE status = 'pend
 // Query with pre-minted ID (for tracking)
 results, _, err := session.QueryWithPreMintedID(ctx, "SELECT 1", "custom-query-id", "slug")
 
-// Manual batch fetching
+// Manual batch fetching — note: results.Data may already contain rows
+// from the initial response, so process it before entering the loop.
 for results.HasMoreBatch() {
     err := results.FetchNextBatch(ctx)
     if err != nil {

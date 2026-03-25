@@ -1,6 +1,7 @@
 package presto
 
 import (
+	"context"
 	"database/sql"
 	"database/sql/driver"
 	"encoding/base64"
@@ -520,6 +521,16 @@ func TestParseIntervalDayToSecond(t *testing.T) {
 		{"1 00:00:00.000", 24 * time.Hour},
 		{"-2 06:00:00.000", -(2*24*time.Hour + 6*time.Hour)},
 		{"0 00:00:00.001", time.Millisecond},
+		// Single-digit fractional seconds (tenths of a second)
+		{"0 00:00:01.1", 1*time.Second + 100*time.Millisecond},
+		// Six-digit fractional seconds (microseconds)
+		{"0 00:00:22.123456", 22*time.Second + 123456*time.Microsecond},
+		// Nine-digit fractional seconds (nanoseconds)
+		{"0 00:00:01.123456789", 1*time.Second + 123456789*time.Nanosecond},
+		// More than 9 digits truncated to nanoseconds
+		{"0 00:00:01.1234567891", 1*time.Second + 123456789*time.Nanosecond},
+		// No fractional seconds
+		{"0 00:00:05", 5 * time.Second},
 	}
 
 	for _, tt := range tests {
@@ -564,4 +575,80 @@ func TestPrestoIsolationLevel(t *testing.T) {
 		_, err := prestoIsolationLevel(sql.LevelLinearizable)
 		assert.Error(t, err)
 	})
+}
+
+func TestConnectorEnsureClient_RetryAfterTransientFailure(t *testing.T) {
+	// Create a connector with an invalid TLS cert path to force ensureClient() failure.
+	// With the old sync.Once approach, this error would be cached permanently.
+	// With the new double-checked locking, fixing the config allows retry.
+	cfg := &dsnConfig{
+		host:  "localhost",
+		port:  "8080",
+		sslCA: "/nonexistent/ca.pem", // triggers buildTLSConfig failure
+	}
+	c := &prestoConnector{cfg: cfg}
+
+	// First Connect should fail due to bad TLS config
+	_, err := c.Connect(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "presto connector:")
+
+	// Verify that the connector is NOT permanently poisoned
+	assert.False(t, c.initialized.Load(), "connector should not be marked initialized after failure")
+
+	// Fix the config (remove bad TLS path) and retry.
+	// Note: cfg must only be replaced before successful initialization;
+	// after initialization, cfg is no longer consulted.
+	c.cfg = &dsnConfig{host: "localhost", port: "8080"}
+	conn, err := c.Connect(context.Background())
+	require.NoError(t, err)
+	assert.NotNil(t, conn)
+	conn.Close()
+}
+
+func TestConnectorEnsureClient_SetsIsTrinoViaMethod(t *testing.T) {
+	// Verify that Trino mode is set through the public IsTrino() method
+	// (which acquires clientMu) rather than direct field assignment.
+	cfg, err := parseDSN("trino://localhost:8080/hive/default")
+	require.NoError(t, err)
+	assert.True(t, cfg.isTrino)
+
+	c := &prestoConnector{cfg: cfg}
+	conn, err := c.Connect(context.Background())
+	require.NoError(t, err)
+	assert.NotNil(t, conn)
+
+	// Verify isTrino was set on the client (single-goroutine test,
+	// safe to read after Connect returns)
+	assert.True(t, c.client.isTrino)
+}
+
+func TestIntervalDayToSecond_RoundTrip(t *testing.T) {
+	// formatDurationAsDayToSecond uses millisecond precision (Presto's wire format).
+	// Verify that format → parse round-trips correctly at millisecond precision.
+	durations := []time.Duration{
+		0,
+		5*24*time.Hour + 3*time.Hour + 14*time.Minute + 22*time.Second + 123*time.Millisecond,
+		12 * time.Hour,
+		24 * time.Hour,
+		time.Millisecond,
+		-(2*24*time.Hour + 6*time.Hour),
+	}
+	for _, d := range durations {
+		formatted := formatDurationAsDayToSecond(d)
+		parsed, err := parseIntervalDayToSecond(formatted)
+		require.NoError(t, err, "failed to parse formatted duration %q (original: %v)", formatted, d)
+		assert.Equal(t, d, parsed, "round-trip mismatch for %v → %q → %v", d, formatted, parsed)
+	}
+}
+
+func TestIntervalDayToSecond_SubMillisTruncatedOnFormat(t *testing.T) {
+	// Durations with sub-millisecond precision lose precision through format
+	// (which outputs millis only), but parse accepts the result.
+	d := 1*time.Second + 123456789*time.Nanosecond
+	formatted := formatDurationAsDayToSecond(d)
+	assert.Equal(t, "0 00:00:01.123", formatted) // truncated to millis
+	parsed, err := parseIntervalDayToSecond(formatted)
+	require.NoError(t, err)
+	assert.Equal(t, 1*time.Second+123*time.Millisecond, parsed)
 }

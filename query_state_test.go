@@ -55,7 +55,7 @@ func TestGetQueryState_NilOptions(t *testing.T) {
 		assert.Equal(t, "/v1/queryState", r.URL.Path)
 		assert.Empty(t, r.URL.RawQuery)
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("[]"))
+		_, _ = w.Write([]byte("[]"))
 	}))
 	defer srv.Close()
 

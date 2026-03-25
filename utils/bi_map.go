@@ -12,7 +12,8 @@ type BiMap[K comparable, V comparable] struct {
 // NewBiMap creates a new bidirectional map from the provided input map.
 // It builds the reverse mapping automatically.
 // Note: If the input map contains duplicate values, the reverse mapping will
-// only contain the last key associated with that value.
+// only contain an arbitrary key associated with that value (Go map iteration
+// order is non-deterministic).
 //
 // Parameters:
 //   - input: The initial key-value mapping
