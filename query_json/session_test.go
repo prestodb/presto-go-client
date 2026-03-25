@@ -43,9 +43,39 @@ func TestSessionPrepareForInsert_Mixed(t *testing.T) {
 	}
 	s.PrepareForInsert()
 
-	// Map iteration order is non-deterministic, so accept either ordering
-	expected1 := "{query_max_memory=1GB, hive.orc_compression=ZSTD}"
-	expected2 := "{hive.orc_compression=ZSTD, query_max_memory=1GB}"
-	assert.True(t, s.SessionPropertiesJson == expected1 || s.SessionPropertiesJson == expected2,
-		"got %s", s.SessionPropertiesJson)
+	// Output is now sorted deterministically
+	assert.Equal(t, "{hive.orc_compression=ZSTD, query_max_memory=1GB}", s.SessionPropertiesJson)
+}
+
+func TestSessionPrepareForInsert_Deterministic(t *testing.T) {
+	s := &Session{
+		SystemProperties: map[string]string{
+			"query_max_memory":         "1GB",
+			"optimize_hash_generation": "true",
+			"task_concurrency":         "8",
+		},
+		CatalogProperties: map[string]map[string]string{
+			"hive":  {"orc_compression": "ZSTD", "bucket_execution": "true"},
+			"delta": {"vacuum_min_retention": "7d"},
+		},
+	}
+
+	// Run multiple times to verify determinism (map iteration is randomized).
+	expected := "{delta.vacuum_min_retention=7d, hive.bucket_execution=true, hive.orc_compression=ZSTD, optimize_hash_generation=true, query_max_memory=1GB, task_concurrency=8}"
+	for i := 0; i < 20; i++ {
+		s.SessionPropertiesJson = "" // reset
+		s.PrepareForInsert()
+		assert.Equal(t, expected, s.SessionPropertiesJson, "iteration %d", i)
+	}
+}
+
+func TestSessionPrepareForInsert_NilReceiver(t *testing.T) {
+	// Verify that calling PrepareForInsert on a nil *Session does not panic.
+	// This matches the nil-safety of CollectSessionProperties (M4).
+	var s *Session
+	assert.NotPanics(t, func() {
+		if s != nil {
+			s.PrepareForInsert()
+		}
+	})
 }

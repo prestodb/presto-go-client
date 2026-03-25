@@ -102,15 +102,16 @@ func (q *QueryInfo) PrepareForInsert() error {
 	}
 
 	// Flatten stages into a list and assemble a combined query plan JSON.
-	// The stage tree/list is consumed here and nilled out to avoid holding duplicate data.
-	q.FlattenedStageList = make([]*StageInfo, 0, 8)
+	// The stage tree/list is consumed below and nilled out only after all
+	// error-prone operations succeed, so a retry after failure won't see
+	// partially cleared state.
+	flattenedStages := make([]*StageInfo, 0, 8)
 	assembledQueryPlan := make(map[string]RawPlanWrapper)
 	if q.OutputStage != nil {
 		// Presto / older Trino: recursively walk the nested outputStage tree.
-		if err := q.OutputStage.PrepareForInsert(&q.FlattenedStageList, assembledQueryPlan); err != nil {
+		if err := q.OutputStage.PrepareForInsert(&flattenedStages, assembledQueryPlan); err != nil {
 			return err
 		}
-		q.OutputStage = nil
 	} else if q.RawStages != nil {
 		// Newer Trino: stages are already a flat list. Each stage's subStages field contains
 		// string references (stage IDs) instead of nested objects, so we use unmarshalFlatStage
@@ -124,17 +125,22 @@ func (q *QueryInfo) PrepareForInsert() error {
 			if err != nil {
 				return err
 			}
-			if err := stage.processForInsert(&q.FlattenedStageList, assembledQueryPlan); err != nil {
+			if err := stage.processForInsert(&flattenedStages, assembledQueryPlan); err != nil {
 				return err
 			}
 		}
-		q.RawStages = nil
 	}
-	if planJson, err := json.Marshal(assembledQueryPlan); err != nil {
+
+	planJson, err := json.Marshal(assembledQueryPlan)
+	if err != nil {
 		return err
-	} else {
-		q.AssembledQueryPlanJson = string(planJson)
 	}
+
+	// All operations succeeded — commit results and nil out consumed fields.
+	q.FlattenedStageList = flattenedStages
+	q.AssembledQueryPlanJson = string(planJson)
+	q.OutputStage = nil
+	q.RawStages = nil
 	q.prepared = true
 	return nil
 }

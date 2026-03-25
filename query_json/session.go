@@ -2,6 +2,7 @@ package query_json
 
 import (
 	"encoding/json"
+	"sort"
 	"strings"
 )
 
@@ -26,33 +27,33 @@ type Session struct {
 // PrepareForInsert formats session properties into a {key=value, ...} string for database
 // insertion. This uses the Presto session properties wire format (not standard JSON).
 func (s *Session) PrepareForInsert() {
-	var b strings.Builder
-	b.WriteString("{")
-	first := true
+	// Collect all key=value pairs, then sort for deterministic output.
+	pairs := make([]string, 0, len(s.SystemProperties))
 	for k, v := range s.SystemProperties {
-		if !first {
-			b.WriteString(", ")
-		}
-		b.WriteString(k)
-		b.WriteString("=")
-		b.WriteString(v)
-		first = false
+		pairs = append(pairs, k+"="+v)
 	}
-	for catalog, props := range s.CatalogProperties {
-		for k, v := range props {
-			if !first {
-				b.WriteString(", ")
-			}
-			b.WriteString(catalog)
-			b.WriteString(".")
-			b.WriteString(k)
-			b.WriteString("=")
-			b.WriteString(v)
-			first = false
+
+	// Catalog properties: sort catalogs, then sort keys within each catalog.
+	catalogs := make([]string, 0, len(s.CatalogProperties))
+	for catalog := range s.CatalogProperties {
+		catalogs = append(catalogs, catalog)
+	}
+	sort.Strings(catalogs)
+	for _, catalog := range catalogs {
+		props := s.CatalogProperties[catalog]
+		keys := make([]string, 0, len(props))
+		for k := range props {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			pairs = append(pairs, catalog+"."+k+"="+props[k])
 		}
 	}
-	b.WriteString("}")
-	s.SessionPropertiesJson = b.String()
+
+	// Sort system properties (appended first) together with catalog properties.
+	sort.Strings(pairs)
+	s.SessionPropertiesJson = "{" + strings.Join(pairs, ", ") + "}"
 }
 
 // CollectSessionProperties returns a flattened map of all session properties

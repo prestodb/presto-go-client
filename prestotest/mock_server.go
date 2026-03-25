@@ -109,7 +109,8 @@ type MockPrestoServer struct {
 	queriesMutex sync.RWMutex // Protects maps during concurrent test execution.
 
 	// defaultLatency is the default fallback query latency if no template latency is defined.
-	defaultLatency time.Duration
+	// Stored as nanoseconds in an atomic.Int64 for lock-free concurrent access.
+	defaultLatency atomic.Int64
 
 	queryIDCounter atomic.Int64
 	today          string // Cached date string for optimized ID generation.
@@ -165,7 +166,7 @@ func (m *MockPrestoServer) AddQuery(tmpl *MockQueryTemplate) {
 
 // SetDefaultLatency configures the fallback query latency.
 func (m *MockPrestoServer) SetDefaultLatency(latency time.Duration) {
-	m.defaultLatency = latency
+	m.defaultLatency.Store(int64(latency))
 }
 
 // --- Request Handlers ---
@@ -276,7 +277,7 @@ func (m *MockPrestoServer) sendQueryResponse(ctx context.Context, w http.Respons
 		return
 	}
 
-	totalLatency := m.defaultLatency
+	totalLatency := time.Duration(m.defaultLatency.Load())
 	if query.Template.Latency > 0 {
 		totalLatency = query.Template.Latency
 	}

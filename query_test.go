@@ -345,3 +345,44 @@ func TestQuery_ClearSessionFromResponse(t *testing.T) {
 
 	assert.Equal(t, "", session.GetSessionParams())
 }
+
+// TestMockServer_SetDefaultLatency_Concurrent verifies that SetDefaultLatency is safe
+// to call concurrently with in-flight queries (H1 race fix).
+func TestMockServer_SetDefaultLatency_Concurrent(t *testing.T) {
+	mockServer, session := newTestSession(t)
+
+	mockServer.AddQuery(&prestotest.MockQueryTemplate{
+		SQL:         "SELECT 1",
+		Data:        [][]any{{1}},
+		DataBatches: 1,
+	})
+
+	// Set an initial default latency.
+	mockServer.SetDefaultLatency(10 * time.Millisecond)
+
+	var wg sync.WaitGroup
+
+	// Concurrently mutate defaultLatency while queries are in flight.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			mockServer.SetDefaultLatency(time.Duration(i) * time.Millisecond)
+		}
+	}()
+
+	// Fire queries concurrently.
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results, _, err := session.Query(context.Background(), "SELECT 1")
+			if err != nil {
+				return
+			}
+			_ = results.Drain(context.Background(), nil)
+		}()
+	}
+
+	wg.Wait()
+}

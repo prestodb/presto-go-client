@@ -190,6 +190,65 @@ func TestPrepareForInsert_DerivedStats_SubSecond(t *testing.T) {
 	assert.Equal(t, int64(400), qi.QueryStats.RowsPerCPUSec)
 }
 
+func TestPrepareForInsert_ErrorPathPreservesState(t *testing.T) {
+	// Verify that a failed PrepareForInsert does not partially mutate the struct,
+	// so a retry after fixing the input produces correct results (M7 fix).
+	raw := `{
+		"queryId": "test_error_path",
+		"state": "FINISHED",
+		"query": "SELECT 1",
+		"queryStats": {
+			"createTime": "2026-01-01T00:00:00Z"
+		},
+		"outputStage": {
+			"stageId": "test_error_path.0",
+			"plan": {"jsonRepresentation": "{\"id\":\"0\"}"},
+			"latestAttemptExecutionInfo": {
+				"state": "FINISHED",
+				"stats": {
+					"totalTasks": 1,
+					"gcInfo": {"stageExecutionId": 0}
+				}
+			},
+			"subStages": []
+		}
+	}`
+
+	var qi QueryInfo
+	require.NoError(t, json.Unmarshal([]byte(raw), &qi))
+
+	// Verify OutputStage is populated before PrepareForInsert.
+	assert.NotNil(t, qi.OutputStage)
+
+	// First call should succeed.
+	require.NoError(t, qi.PrepareForInsert())
+	assert.Len(t, qi.FlattenedStageList, 1)
+	assert.Nil(t, qi.OutputStage, "OutputStage should be nilled after successful prepare")
+
+	// Second call should be idempotent (already prepared).
+	require.NoError(t, qi.PrepareForInsert())
+	assert.Len(t, qi.FlattenedStageList, 1)
+}
+
+func TestPrepareForInsert_BadStagesDoesNotCorrupt(t *testing.T) {
+	// When RawStages contains invalid JSON, PrepareForInsert should return an error
+	// without nilling out RawStages, so the caller can inspect or retry.
+	qi := QueryInfo{
+		QueryId:   "test_bad_stages",
+		State:     "FINISHED",
+		Query:     "SELECT 1",
+		RawStages: json.RawMessage(`{not valid json`),
+	}
+
+	err := qi.PrepareForInsert()
+	require.Error(t, err)
+
+	// RawStages should NOT have been nilled out — state is preserved for retry.
+	assert.NotNil(t, qi.RawStages, "RawStages should be preserved on error")
+	assert.Empty(t, qi.FlattenedStageList, "FlattenedStageList should not be set on error")
+	assert.False(t, qi.prepared, "prepared should remain false on error")
+}
+
 func TestPrepareForInsert_Idempotent(t *testing.T) {
 	raw := `{
 		"queryId": "test_idempotent",

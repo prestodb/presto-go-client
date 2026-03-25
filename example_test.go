@@ -100,7 +100,7 @@ func TestExample_DatabaseSQL_Transactions(t *testing.T) {
 
 	rows, err := tx.QueryContext(ctx, "SELECT count(*) FROM orders")
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback() // best-effort cleanup before fatal
 		log.Fatal(err)
 	}
 	defer rows.Close()
@@ -417,7 +417,9 @@ func TestExample_LowLevel_QueryInfo(t *testing.T) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	results.Drain(ctx, nil)
+	if err := results.Drain(ctx, nil); err != nil {
+		log.Fatal(err)
+	}
 	queryId := results.Id
 
 	// Fetch detailed query info (stats, stages, operators).
@@ -479,5 +481,7 @@ func TestExample_LowLevel_RequestOptions(t *testing.T) {
 		log.Fatal(err)
 	}
 	// The Authorization header is also sent on all subsequent batch fetches.
-	results.Drain(ctx, nil)
+	if err := results.Drain(ctx, nil); err != nil {
+		log.Fatal(err)
+	}
 }
