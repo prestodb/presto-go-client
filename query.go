@@ -168,7 +168,7 @@ func (s *Session) CancelQuery(ctx context.Context, nextUri string, opts ...Reque
 // Example:
 //
 //	// Decode into a struct
-//	var info query_json.QueryInfo
+//	var info queryjson.QueryInfo
 //	resp, err := session.GetQueryInfo(ctx, "20231001_123456_00001_xxxxx", &info)
 //
 //	// Write raw JSON to a file

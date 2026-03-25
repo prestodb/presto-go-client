@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Go client library for [Presto](https://prestodb.io/) and [Trino](https://trino.io/) SQL query engines. Provides:
 - Complete Presto REST API client (query execution, cluster info, query state, query info)
 - Go `database/sql` driver (registered as `"presto"`)
-- Query info/stats parsing (`query_json` subpackage)
+- Query info/stats parsing (`queryjson` subpackage)
 
 ## Commands
 
@@ -47,9 +47,9 @@ CI also includes a `release.yml` workflow for tagged releases.
 Three separate Go modules share this repo. Auth modules are opt-in to avoid forcing heavy dependencies (gokrb5, oauth2) on all consumers.
 
 ```
-github.com/prestodb/presto-go-client/v2           # root module (presto package)
+github.com/prestodb/presto-go-client/v2     # root module (presto package)
 ├── utils/                                  # BiMap utility (subpackage, same module)
-├── query_json/                             # Query info/stats types (subpackage, same module)
+├── queryjson/                              # Query info/stats types (subpackage, same module)
 ├── prestotest/                             # MockPrestoServer (subpackage, same module)
 ├── prestoauth/kerberos/                    # separate module (gokrb5 dep)
 └── prestoauth/oauth2/                      # separate module (x/oauth2 dep)

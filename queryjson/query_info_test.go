@@ -1,4 +1,4 @@
-package query_json
+package queryjson
 
 import (
 	"encoding/json"
@@ -190,9 +190,9 @@ func TestPrepareForInsert_DerivedStats_SubSecond(t *testing.T) {
 	assert.Equal(t, int64(400), qi.QueryStats.RowsPerCPUSec)
 }
 
-func TestPrepareForInsert_ErrorPathPreservesState(t *testing.T) {
-	// Verify that a failed PrepareForInsert does not partially mutate the struct,
-	// so a retry after fixing the input produces correct results (M7 fix).
+func TestPrepareForInsert_SuccessNilsConsumedFields(t *testing.T) {
+	// Verify that a successful PrepareForInsert nils out consumed fields
+	// and that a second call is idempotent.
 	raw := `{
 		"queryId": "test_error_path",
 		"state": "FINISHED",

@@ -380,7 +380,7 @@ func TestMockServer_SetDefaultLatency_Concurrent(t *testing.T) {
 			if err != nil {
 				return
 			}
-			_ = results.Drain(context.Background(), nil)
+			_ = results.Drain(context.Background(), nil) // best-effort; test goal is race detection, not query success
 		}()
 	}
 

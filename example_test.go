@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/prestodb/presto-go-client/v2"
-	"github.com/prestodb/presto-go-client/v2/query_json"
+	"github.com/prestodb/presto-go-client/v2/queryjson"
 )
 
 // =============================================================================
@@ -423,7 +423,7 @@ func TestExample_LowLevel_QueryInfo(t *testing.T) {
 	queryId := results.Id
 
 	// Fetch detailed query info (stats, stages, operators).
-	var info query_json.QueryInfo
+	var info queryjson.QueryInfo
 	_, err = session.GetQueryInfo(ctx, queryId, &info)
 	if err != nil {
 		log.Fatal(err)

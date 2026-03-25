@@ -1,4 +1,4 @@
-package query_json
+package queryjson
 
 // FailureInfo represents a query failure's type and message.
 type FailureInfo struct {

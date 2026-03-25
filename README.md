@@ -6,7 +6,7 @@ A Go client library for [Presto](https://prestodb.io/) and [Trino](https://trino
 
 - **`database/sql` driver** — use the standard Go database API (`sql.Open`, `db.Query`, `rows.Scan`)
 - Complete Presto REST API client (query execution, cluster info, query state, query info)
-- Query info/stats parsing (`query_json` subpackage)
+- Query info/stats parsing (`queryjson` subpackage)
 - Trino compatibility mode (automatic header translation)
 - Session management with isolated, cloneable sessions
 - Transaction state tracking (automatic via response headers)
@@ -309,7 +309,7 @@ for _, s := range states {
 
 ```go
 // Decode into a struct
-var info query_json.QueryInfo
+var info queryjson.QueryInfo
 _, err := session.GetQueryInfo(ctx, "20231001_123456_00001_xxxxx", &info)
 
 // Or write raw JSON to a file

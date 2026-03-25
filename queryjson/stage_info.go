@@ -1,4 +1,4 @@
-package query_json
+package queryjson
 
 import (
 	"bytes"
