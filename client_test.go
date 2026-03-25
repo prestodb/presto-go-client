@@ -586,3 +586,18 @@ func TestSession_Concurrency(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestSession_Source(t *testing.T) {
+	c, _ := NewClient("http://localhost:8080")
+	s := c.NewSession()
+
+	// Fluent setter returns self
+	ret := s.Source("myapp")
+	assert.Same(t, s, ret)
+	assert.Equal(t, "myapp", s.source)
+
+	// Verify the header is set on requests
+	req, err := s.NewRequest("GET", "/", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "myapp", req.Header.Get("X-Presto-Source"))
+}

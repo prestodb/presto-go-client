@@ -388,9 +388,8 @@ func TestExample_LowLevel_QueryState(t *testing.T) {
 	ctx := context.Background()
 
 	// List all queries for a specific user.
-	user := "analyst"
 	states, _, err := session.GetQueryState(ctx, &presto.GetQueryStateOptions{
-		User: &user,
+		User: new("analyst"),
 	})
 	if err != nil {
 		log.Fatal(err)

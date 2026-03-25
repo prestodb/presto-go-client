@@ -481,12 +481,14 @@ func retrySleep(ctx context.Context, d time.Duration) error {
 // isRetryableNetError returns true for transient network errors that warrant
 // a retry (connection refused, DNS failures, connection reset, network timeouts).
 // Context cancellation and deadline exceeded errors are NOT retried.
+// Note: network-layer timeouts (e.g., dial timeouts) ARE retried, unlike
+// context deadlines. This is intentional — a dial timeout is transient, while
+// a context deadline reflects the caller's budget.
 func isRetryableNetError(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
-	var netErr net.Error
-	if errors.As(err, &netErr) {
+	if _, ok := errors.AsType[net.Error](err); ok {
 		return true
 	}
 	var opErr *net.OpError

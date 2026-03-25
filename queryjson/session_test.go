@@ -70,12 +70,10 @@ func TestSessionPrepareForInsert_Deterministic(t *testing.T) {
 }
 
 func TestSessionPrepareForInsert_NilReceiver(t *testing.T) {
-	// Verify that calling PrepareForInsert on a nil *Session does not panic.
-	// This matches the nil-safety of CollectSessionProperties (M4).
+	// Verify that calling PrepareForInsert on a nil *Session does not panic,
+	// matching the nil-safety of CollectSessionProperties.
 	var s *Session
 	assert.NotPanics(t, func() {
-		if s != nil {
-			s.PrepareForInsert()
-		}
+		s.PrepareForInsert()
 	})
 }

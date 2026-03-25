@@ -27,6 +27,9 @@ type Session struct {
 // PrepareForInsert formats session properties into a {key=value, ...} string for database
 // insertion. This uses the Presto session properties wire format (not standard JSON).
 func (s *Session) PrepareForInsert() {
+	if s == nil {
+		return
+	}
 	// Collect all key=value pairs, then sort for deterministic output.
 	pairs := make([]string, 0, len(s.SystemProperties))
 	for k, v := range s.SystemProperties {

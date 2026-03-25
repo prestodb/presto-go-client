@@ -39,9 +39,8 @@ func TestGetQueryState(t *testing.T) {
 	require.NoError(t, err)
 	s := c.NewSession()
 
-	trueVal := true
 	states, resp, err := s.GetQueryState(context.Background(), &presto.GetQueryStateOptions{
-		IncludeAllQueries: &trueVal,
+		IncludeAllQueries: new(true),
 	})
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
@@ -68,13 +67,10 @@ func TestGetQueryState_NilOptions(t *testing.T) {
 
 func TestGenerateHTTPQueryParameter(t *testing.T) {
 	t.Run("All fields set", func(t *testing.T) {
-		trueVal := true
-		limit := 100
-		user := "admin"
 		opts := presto.GetQueryStateOptions{
-			User:               &user,
-			IncludeAllQueries:  &trueVal,
-			QueryTextSizeLimit: &limit,
+			User:               new("admin"),
+			IncludeAllQueries:  new(true),
+			QueryTextSizeLimit: new(100),
 		}
 		result := presto.GenerateHTTPQueryParameter(&opts)
 		assert.Contains(t, result, "user=admin")
@@ -83,9 +79,8 @@ func TestGenerateHTTPQueryParameter(t *testing.T) {
 	})
 
 	t.Run("Nil pointer fields skipped", func(t *testing.T) {
-		trueVal := true
 		opts := presto.GetQueryStateOptions{
-			IncludeAllQueries: &trueVal,
+			IncludeAllQueries: new(true),
 		}
 		result := presto.GenerateHTTPQueryParameter(&opts)
 		assert.Equal(t, "includeAllQueries=true", result)

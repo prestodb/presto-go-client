@@ -19,8 +19,7 @@ func TestFetchNextBatch_NilQueryResults(t *testing.T) {
 
 func TestFetchNextBatch_NoSession(t *testing.T) {
 	qr := &QueryResults{}
-	nextUri := "http://localhost/next"
-	qr.NextUri = &nextUri
+	qr.NextUri = new("http://localhost/next")
 	err := qr.FetchNextBatch(context.Background())
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no session associated")

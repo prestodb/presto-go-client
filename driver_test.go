@@ -3,6 +3,7 @@ package presto_test
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"net/http"
 	"reflect"
 	"testing"
@@ -172,19 +173,17 @@ func TestDriver_ExecContext(t *testing.T) {
 		Columns:     []presto.Column{},
 		Data:        [][]any{},
 		DataBatches: 0,
+		UpdateCount: &updateCount,
 	})
 
 	db := newTestDB(t, mock.URL())
 
-	// The mock server doesn't set UpdateCount, so we'll get 0.
-	// But we can verify the exec path works without error.
 	result, err := db.ExecContext(context.Background(), "INSERT INTO t SELECT * FROM s")
 	require.NoError(t, err)
 
 	affected, err := result.RowsAffected()
 	require.NoError(t, err)
-	_ = affected
-	_ = updateCount
+	assert.Equal(t, updateCount, affected)
 
 	_, err = result.LastInsertId()
 	assert.Error(t, err, "LastInsertId should not be supported")
@@ -715,6 +714,161 @@ func TestDriver_ComplexTypes(t *testing.T) {
 	assert.False(t, addr2.Valid)
 
 	require.NoError(t, rows.Err())
+}
+
+// ============================================================
+// Coverage for deprecated / thin paths
+// ============================================================
+
+// TestDriver_Open exercises the deprecated driver.Driver.Open path (L2).
+func TestDriver_Open(t *testing.T) {
+	mock := prestotest.NewMockPrestoServer()
+	defer mock.Close()
+
+	mock.AddQuery(&prestotest.MockQueryTemplate{
+		SQL:     "SELECT 1",
+		Columns: []presto.Column{{Name: "result", Type: "integer"}},
+		Data:    [][]any{{1}},
+	})
+
+	host := mock.URL()[len("http://"):]
+	dsn := "presto://" + host
+
+	// sql.Open uses driver.Driver.Open internally when no connector is registered.
+	db, err := sql.Open("presto", dsn)
+	require.NoError(t, err)
+	defer db.Close()
+
+	var result int64
+	err = db.QueryRowContext(context.Background(), "SELECT 1").Scan(&result)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), result)
+}
+
+// TestConnector_Driver exercises the trivial Driver() accessor (L2).
+func TestConnector_Driver(t *testing.T) {
+	connector, err := presto.NewConnector("presto://localhost:8080")
+	require.NoError(t, err)
+	d := connector.Driver()
+	assert.NotNil(t, d)
+}
+
+// TestDriver_WithHTTPClient verifies the WithHTTPClient connector option (L3).
+func TestDriver_WithHTTPClient(t *testing.T) {
+	mock := prestotest.NewMockPrestoServer()
+	defer mock.Close()
+
+	mock.AddQuery(&prestotest.MockQueryTemplate{
+		SQL:     "SELECT 1",
+		Columns: []presto.Column{{Name: "result", Type: "integer"}},
+		Data:    [][]any{{1}},
+	})
+
+	host := mock.URL()[len("http://"):]
+	dsn := "presto://" + host
+
+	customClient := &http.Client{Timeout: 30 * time.Second}
+	connector, err := presto.NewConnector(dsn, presto.WithHTTPClient(customClient))
+	require.NoError(t, err)
+
+	db := sql.OpenDB(connector)
+	defer db.Close()
+
+	var result int64
+	err = db.QueryRowContext(context.Background(), "SELECT 1").Scan(&result)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), result)
+}
+
+// TestDriver_DeprecatedBegin exercises the deprecated Conn.Begin method directly
+// via a raw driver.Conn obtained from the connector (M1). database/sql always
+// prefers ConnBeginTx, so the only way to hit Begin() is through the raw interface.
+func TestDriver_DeprecatedBegin(t *testing.T) {
+	mock := prestotest.NewMockPrestoServer()
+	defer mock.Close()
+
+	mock.AddQuery(&prestotest.MockQueryTemplate{
+		SQL:     "START TRANSACTION",
+		Columns: []presto.Column{},
+		Data:    [][]any{},
+	})
+	mock.AddQuery(&prestotest.MockQueryTemplate{
+		SQL:     "ROLLBACK",
+		Columns: []presto.Column{},
+		Data:    [][]any{},
+	})
+
+	host := mock.URL()[len("http://"):]
+	connector, err := presto.NewConnector("presto://" + host)
+	require.NoError(t, err)
+
+	conn, err := connector.Connect(context.Background())
+	require.NoError(t, err)
+	defer conn.Close()
+
+	// Call the deprecated Begin() directly — this is the only way to reach it
+	// since database/sql always prefers ConnBeginTx.
+	tx, err := conn.Begin() //lint:ignore SA1019 intentionally testing deprecated path
+	require.NoError(t, err)
+	assert.NoError(t, tx.Rollback())
+}
+
+// TestDriver_DeprecatedStmtExecAndQuery exercises the deprecated (non-context)
+// Stmt.Exec and Stmt.Query paths that use context.Background() internally (H2).
+func TestDriver_DeprecatedStmtExecAndQuery(t *testing.T) {
+	mock := prestotest.NewMockPrestoServer()
+	defer mock.Close()
+
+	mock.AddQuery(&prestotest.MockQueryTemplate{
+		SQL:     "SELECT 1",
+		Columns: []presto.Column{{Name: "x", Type: "integer"}},
+		Data:    [][]any{{1}},
+	})
+	updateCount := int64(5)
+	mock.AddQuery(&prestotest.MockQueryTemplate{
+		SQL:         "INSERT INTO t VALUES (1)",
+		Columns:     []presto.Column{},
+		Data:        [][]any{},
+		DataBatches: 0,
+		UpdateCount: &updateCount,
+	})
+
+	host := mock.URL()[len("http://"):]
+	connector, err := presto.NewConnector("presto://" + host)
+	require.NoError(t, err)
+
+	// Get a raw driver.Conn to access deprecated Stmt methods directly.
+	conn, err := connector.Connect(context.Background())
+	require.NoError(t, err)
+	defer conn.Close()
+
+	t.Run("Query", func(t *testing.T) {
+		stmt, err := conn.Prepare("SELECT 1")
+		require.NoError(t, err)
+		defer stmt.Close()
+
+		//lint:ignore SA1019 intentionally testing deprecated path
+		rows, err := stmt.Query(nil)
+		require.NoError(t, err)
+		defer rows.Close()
+
+		dest := make([]driver.Value, 1)
+		require.NoError(t, rows.Next(dest))
+		assert.Equal(t, int64(1), dest[0])
+	})
+
+	t.Run("Exec", func(t *testing.T) {
+		stmt, err := conn.Prepare("INSERT INTO t VALUES (1)")
+		require.NoError(t, err)
+		defer stmt.Close()
+
+		//lint:ignore SA1019 intentionally testing deprecated path
+		result, err := stmt.Exec(nil)
+		require.NoError(t, err)
+		affected, err := result.RowsAffected()
+		require.NoError(t, err)
+		assert.Equal(t, int64(5), affected)
+	})
 }
 
 // ============================================================

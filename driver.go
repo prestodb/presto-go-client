@@ -699,8 +699,10 @@ func (c *prestoConnector) ensureClient() error {
 	}
 
 	// c.client must be assigned before initialized is set to true.
-	// Readers outside initMu rely on the atomic store acting as a
-	// release fence to see the c.client write.
+	// Per the Go memory model (https://go.dev/ref/mem), an atomic
+	// store-release followed by an atomic load-acquire on the same
+	// variable creates a happens-before edge. Readers outside initMu
+	// that observe initialized==true are guaranteed to see c.client.
 	c.client = client
 	c.initialized.Store(true)
 	return nil

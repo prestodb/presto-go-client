@@ -45,7 +45,7 @@ func (qs QueryState) String() string {
 // generateMockSlug creates a random string to simulate the Presto security slug.
 func generateMockSlug() string {
 	b := make([]byte, 16)
-	_, _ = rand.Read(b)
+	rand.Read(b)
 	return hex.EncodeToString(b)
 }
 
@@ -76,6 +76,7 @@ type MockQueryTemplate struct {
 	Data         [][]any            // The full result set partitioned across batches.
 	Error        *presto.QueryError // Optional error to simulate a query failure.
 	Latency      time.Duration      // Latency for the query execution.
+	UpdateCount  *int64             // Optional row count for DML statements (INSERT/UPDATE/DELETE).
 
 	// SetSessionProperties simulates X-Presto-Set-Session response headers.
 	// Each entry is sent as "key=urlEncodedValue" on the initial response.
@@ -349,9 +350,8 @@ func (m *MockPrestoServer) sendQueryResponse(ctx context.Context, w http.Respons
 		if query.QueuedFor < queueBatchCount {
 			nextBatch = 0
 		}
-		nextUri := fmt.Sprintf("%s/v1/statement/%s/%s/%d?slug=%s",
-			m.server.URL, query.State, queryID, nextBatch, generateMockSlug())
-		resp.NextUri = &nextUri
+		resp.NextUri = new(fmt.Sprintf("%s/v1/statement/%s/%s/%d?slug=%s",
+			m.server.URL, query.State, queryID, nextBatch, generateMockSlug()))
 	}
 
 	// Data is delivered sequentially across DataBatches.
@@ -376,10 +376,13 @@ func (m *MockPrestoServer) sendQueryResponse(ctx context.Context, w http.Respons
 		}
 	}
 
-	// Only include error in the final response, matching real Presto behavior
-	// where errors are reported after query planning/execution completes.
-	if !hasMore && query.Template.Error != nil {
-		resp.Error = query.Template.Error
+	// Only include error and update count in the final response, matching real
+	// Presto behavior where these are reported after query execution completes.
+	if !hasMore {
+		if query.Template.Error != nil {
+			resp.Error = query.Template.Error
+		}
+		resp.UpdateCount = query.Template.UpdateCount
 	}
 
 	// Send session property headers only on the first response, matching Presto server behavior.
