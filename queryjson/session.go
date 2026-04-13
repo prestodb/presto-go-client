@@ -27,8 +27,8 @@ type Session struct {
 // PrepareForInsert formats session properties into a {key=value, ...} string for database
 // insertion. This uses the Presto session properties wire format (not standard JSON), for
 // example: {join_distribution_type=AUTOMATIC, hive.optimize_index_filtering=TRUE}. Keys and
-// values are concatenated as-is (no additional escaping), and pairs are joined with ", " and
-// wrapped in curly braces.
+// values are concatenated as-is (no additional escaping), pairs are sorted alphabetically,
+// joined with ", ", and wrapped in curly braces.
 func (s *Session) PrepareForInsert() {
 	if s == nil {
 		return
