@@ -28,6 +28,7 @@ type QueryInfo struct {
 	FlattenedStageList     []*StageInfo
 	ParsedFailureInfo      *FailureInfo
 	AssembledQueryPlanJson string `presto_query_plans:"json_plan"`
+	TextPlan               string `presto_query_plans:"plan"`
 	prepared               bool
 }
 
