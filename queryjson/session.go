@@ -21,11 +21,14 @@ type Session struct {
 	UserAgent         *string                      `json:"userAgent,omitempty" presto_query_creation_info:"user_agent" presto_query_statistics:"user_agent"`
 	ClientTags        *json.RawMessage             `json:"clientTags,omitempty" presto_query_creation_info:"client_tags" presto_query_statistics:"client_tags"`
 
-	SessionPropertiesJson string `presto_query_creation_info:"session_properties_json" presto_query_statistics:"session_properties_json"`
+	SessionPropertiesJSON string `presto_query_creation_info:"session_properties_json" presto_query_statistics:"session_properties_json"`
 }
 
 // PrepareForInsert formats session properties into a {key=value, ...} string for database
-// insertion. This uses the Presto session properties wire format (not standard JSON).
+// insertion. This uses the Presto session properties wire format (not standard JSON), for
+// example: {join_distribution_type=AUTOMATIC, hive.optimize_index_filtering=TRUE}. Keys and
+// values are concatenated as-is (no additional escaping), pairs are sorted alphabetically,
+// joined with ", ", and wrapped in curly braces.
 func (s *Session) PrepareForInsert() {
 	if s == nil {
 		return
@@ -41,7 +44,7 @@ func (s *Session) PrepareForInsert() {
 		}
 	}
 	sort.Strings(pairs)
-	s.SessionPropertiesJson = "{" + strings.Join(pairs, ", ") + "}"
+	s.SessionPropertiesJSON = "{" + strings.Join(pairs, ", ") + "}"
 }
 
 // CollectSessionProperties returns a flattened map of all session properties
