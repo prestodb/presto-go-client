@@ -601,3 +601,21 @@ func TestSession_Source(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "myapp", req.Header.Get("X-Presto-Source"))
 }
+
+func TestDo_ErrorBodyIsTruncated(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write(bytes.Repeat([]byte("x"), 1<<20))
+	}))
+	defer srv.Close()
+	c, err := NewClient(srv.URL)
+	require.NoError(t, err)
+	s := c.NewSession()
+	req, err := s.NewRequest("GET", "/", nil)
+	require.NoError(t, err)
+
+	_, err = s.Do(context.Background(), req, nil)
+	require.Error(t, err)
+	assert.Less(t, len(err.Error()), maxErrorBodySize+100)
+	assert.True(t, strings.HasSuffix(err.Error(), "..."), "a truncated body is marked")
+}

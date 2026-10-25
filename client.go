@@ -456,15 +456,23 @@ func (s *Session) Do(ctx context.Context, req *http.Request, v any) (*http.Respo
 			continue
 		}
 
-		body, readErr := io.ReadAll(resp.Body)
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize+1))
 		resp.Body.Close()
 		if readErr != nil {
 			return resp, fmt.Errorf("presto server error: %d (failed to read body: %w)", resp.StatusCode, readErr)
+		}
+		if len(body) > maxErrorBodySize {
+			body = append(body[:maxErrorBodySize], "..."...)
 		}
 		return resp, fmt.Errorf("presto server error: %d: %s", resp.StatusCode, string(body))
 	}
 	return nil, fmt.Errorf("max retries exceeded")
 }
+
+// maxErrorBodySize bounds how much of a failed response's body goes into
+// the error, which a proxy or load balancer can fill with an HTML page or a
+// body of any size.
+const maxErrorBodySize = 8 << 10
 
 // retrySleep waits for the given duration or until the context is cancelled.
 func retrySleep(ctx context.Context, d time.Duration) error {
