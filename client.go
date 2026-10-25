@@ -83,12 +83,17 @@ type Client struct {
 
 // --- Initialization & Lifecycle ---
 
+// errMalformedURL replaces the error of url.Parse for a server URL or DSN.
+// That error repeats the URL, and its description of the part it could not
+// parse can be a fragment of the password, so neither is kept.
+var errMalformedURL = errors.New("malformed URL; check the host, the port and the percent-encoding of the user name and password")
+
 // NewClient initializes the client and links its embedded session to itself.
 // basicAuth is an optional variadic parameter.
 func NewClient(serverUrl string, basicAuth ...string) (*Client, error) {
 	parsedUrl, err := url.Parse(serverUrl)
 	if err != nil {
-		return nil, fmt.Errorf("invalid server URL: %w", err)
+		return nil, fmt.Errorf("invalid server URL: %w", errMalformedURL)
 	}
 
 	c := &Client{

@@ -5,6 +5,7 @@ package oauth2
 
 import (
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -120,7 +121,9 @@ var oauth2DSNParams = []string{
 func parseDSN(dsn string) (presto.RequestOption, string, error) {
 	u, err := url.Parse(dsn)
 	if err != nil {
-		return nil, "", fmt.Errorf("oauth2: invalid DSN: %w", err)
+		// The error of url.Parse repeats the DSN, which can carry a password
+		// or a token, so it is not kept.
+		return nil, "", errors.New("oauth2: invalid DSN: malformed URL; check the host, the port and the percent-encoding of the user name and password")
 	}
 
 	q := u.Query()

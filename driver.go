@@ -61,7 +61,7 @@ type dsnConfig struct {
 func parseDSN(dsn string) (*dsnConfig, error) {
 	u, err := url.Parse(dsn)
 	if err != nil {
-		return nil, fmt.Errorf("invalid DSN: %w", err)
+		return nil, fmt.Errorf("invalid DSN: %w", errMalformedURL)
 	}
 
 	cfg := &dsnConfig{

@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"encoding/base64"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -651,4 +652,23 @@ func TestIntervalDayToSecond_SubMillisTruncatedOnFormat(t *testing.T) {
 	parsed, err := parseIntervalDayToSecond(formatted)
 	require.NoError(t, err)
 	assert.Equal(t, 1*time.Second+123*time.Millisecond, parsed)
+}
+
+func TestURLErrorsOmitCredentials(t *testing.T) {
+	for _, dsn := range []string{
+		"presto://alice:p/ss@host:8080/hive",
+		"presto://alice:s3cret@host:80a/hive",
+		"presto://alice:s3%zzcret@host/hive",
+	} {
+		_, err := parseDSN(dsn)
+		require.Error(t, err, dsn)
+		assert.Contains(t, err.Error(), "invalid DSN")
+		assert.NotContains(t, err.Error(), "alice", dsn)
+		assert.NotContains(t, err.Error(), "s3", dsn)
+		assert.NotContains(t, err.Error(), ":p", dsn)
+
+		_, err = NewClient(strings.Replace(dsn, "presto://", "http://", 1))
+		require.Error(t, err, dsn)
+		assert.NotContains(t, err.Error(), "alice", dsn)
+	}
 }

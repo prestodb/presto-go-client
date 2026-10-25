@@ -97,6 +97,13 @@ func TestParseDSN(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid DSN")
 	})
+
+	t.Run("invalid DSN error omits the password", func(t *testing.T) {
+		_, _, err := parseDSN("presto://alice:p/ss@host:8443?kerberos_principal=alice")
+		require.Error(t, err)
+		assert.NotContains(t, err.Error(), "alice")
+		assert.NotContains(t, err.Error(), ":p")
+	})
 }
 
 func TestNewRequestOption_MissingConfig(t *testing.T) {

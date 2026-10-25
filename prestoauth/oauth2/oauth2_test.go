@@ -120,6 +120,12 @@ func TestParseDSN(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("invalid DSN error omits the token", func(t *testing.T) {
+		_, _, err := parseDSN("presto://host:80a?access_token=s3cr3t")
+		require.Error(t, err)
+		assert.NotContains(t, err.Error(), "s3cr3t")
+	})
+
 	t.Run("client credentials with scopes", func(t *testing.T) {
 		// Use a mock token server for validation
 		tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
