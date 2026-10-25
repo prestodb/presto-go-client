@@ -403,6 +403,12 @@ func (s *Session) Do(ctx context.Context, req *http.Request, v any) (*http.Respo
 			if !isRetryableNetError(err) {
 				return nil, err
 			}
+			// A POST that failed after the connection was made may have reached
+			// the server, and repeating it would run the statement again, so it
+			// is retried only when the connection could not be established.
+			if req.Method == http.MethodPost && !isDialError(err) {
+				return nil, err
+			}
 
 			log.Debug().Err(err).Int("attempt", attempt+1).Msg("retrying on connection error")
 
@@ -491,6 +497,13 @@ func isRetryableNetError(err error) bool {
 	// net.Error covers *net.OpError and all other network-layer errors.
 	_, ok := errors.AsType[net.Error](err)
 	return ok
+}
+
+// isDialError reports whether err happened while connecting to the server or
+// to an HTTP proxy, before any part of the request was sent.
+func isDialError(err error) bool {
+	opErr, ok := errors.AsType[*net.OpError](err)
+	return ok && (opErr.Op == "dial" || opErr.Op == "proxyconnect")
 }
 
 func (s *Session) updateTransactionState(resp *http.Response) {

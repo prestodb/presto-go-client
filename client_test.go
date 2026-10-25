@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -374,14 +375,64 @@ type failingRoundTripper struct {
 	failCount int
 	calls     int
 	wrapped   http.RoundTripper
+	// op is the operation of the injected error; "dial" when empty.
+	op string
 }
 
 func (f *failingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	f.calls++
 	if f.calls <= f.failCount {
-		return nil, &net.OpError{Op: "dial", Net: "tcp", Err: fmt.Errorf("connection refused")}
+		op := f.op
+		if op == "" {
+			op = "dial"
+		}
+		return nil, &net.OpError{Op: op, Net: "tcp", Err: fmt.Errorf("connection reset by peer")}
 	}
 	return f.wrapped.RoundTrip(req)
+}
+
+func TestDo_PostRetriesOnlyBeforeSending(t *testing.T) {
+	for _, tc := range []struct {
+		op        string
+		wantCalls int
+	}{
+		{"dial", 2},
+		{"proxyconnect", 2},
+		{"read", 1},
+		{"write", 1},
+	} {
+		t.Run(tc.op, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = w.Write([]byte(`{"id":"q1"}`))
+			}))
+			defer srv.Close()
+			c, err := NewClient(srv.URL)
+			require.NoError(t, err)
+			rt := &failingRoundTripper{failCount: 1, wrapped: srv.Client().Transport, op: tc.op}
+			c.httpClient.Transport = rt
+
+			_, _, _ = c.NewSession().Query(context.Background(), "INSERT INTO t VALUES (1)")
+			assert.Equal(t, tc.wantCalls, rt.calls)
+		})
+	}
+}
+
+func TestDo_PostIsNotResentAfterTheServerReadIt(t *testing.T) {
+	var statements atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		statements.Add(1)
+		conn, _, err := w.(http.Hijacker).Hijack()
+		require.NoError(t, err)
+		_ = conn.Close()
+	}))
+	defer srv.Close()
+	c, err := NewClient(srv.URL)
+	require.NoError(t, err)
+
+	_, _, err = c.NewSession().Query(context.Background(), "INSERT INTO t VALUES (1)")
+	require.Error(t, err)
+	assert.Equal(t, int32(1), statements.Load(), "the statement must reach the server once")
 }
 
 func TestDo_ConnectionErrorRetry(t *testing.T) {

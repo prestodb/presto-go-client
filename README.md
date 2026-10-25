@@ -11,7 +11,7 @@ A Go client library for [Presto](https://prestodb.io/) and [Trino](https://trino
 - Session management with isolated, cloneable sessions
 - Transaction state tracking (automatic via response headers)
 - Batch result streaming with memory-efficient `Drain` API
-- Automatic retry with exponential backoff on 503 responses and transient connection errors
+- Automatic retry with exponential backoff on 503 responses and transient connection errors; a statement is resent only when the connection could not be established
 - Gzip request/response compression
 - Thread-safe concurrent session access
 - Fluent API for session configuration
