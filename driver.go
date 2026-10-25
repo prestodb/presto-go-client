@@ -20,6 +20,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 func init() {
@@ -981,9 +983,23 @@ func (r *prestoRows) Columns() []string {
 
 // Close implements driver.Rows.
 func (r *prestoRows) Close() error {
-	r.closed.Store(true)
+	if r.closed.Swap(true) || !r.qr.HasMoreBatch() {
+		return nil
+	}
+	// The rest of the result is not read, so cancel the query rather than
+	// leave it running on the server until it times out. Closing the rows
+	// succeeds either way; the caller has no further use for them.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.ctx), cancelQueryTimeout)
+	defer cancel()
+	if _, _, err := r.qr.session.CancelQuery(ctx, *r.qr.NextUri); err != nil {
+		log.Debug().Err(err).Str("query_id", r.qr.Id).Msg("failed to cancel query when its rows were closed")
+	}
 	return nil
 }
+
+// cancelQueryTimeout bounds the DELETE that Rows.Close sends for a query
+// whose result was not read to the end.
+const cancelQueryTimeout = 10 * time.Second
 
 // Next implements driver.Rows.
 func (r *prestoRows) Next(dest []driver.Value) error {

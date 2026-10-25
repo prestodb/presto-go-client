@@ -5,7 +5,12 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/base64"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -651,4 +656,50 @@ func TestIntervalDayToSecond_SubMillisTruncatedOnFormat(t *testing.T) {
 	parsed, err := parseIntervalDayToSecond(formatted)
 	require.NoError(t, err)
 	assert.Equal(t, 1*time.Second+123*time.Millisecond, parsed)
+}
+
+func TestRowsClose_CancelsUnreadQuery(t *testing.T) {
+	var deletes atomic.Int32
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodDelete:
+			deletes.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		case r.URL.Path == "/v1/statement":
+			_, _ = fmt.Fprintf(w, `{"id":"q1","columns":[{"name":"x","type":"integer"}],"data":[[1]],"nextUri":%q}`, srv.URL+"/v1/statement/executing/q1/1")
+		default:
+			_, _ = w.Write([]byte(`{"id":"q1","columns":[{"name":"x","type":"integer"}],"data":[[2]]}`))
+		}
+	}))
+	defer srv.Close()
+	db, err := sql.Open("presto", "presto://alice@"+strings.TrimPrefix(srv.URL, "http://"))
+	require.NoError(t, err)
+	defer db.Close()
+
+	rows, err := db.Query("SELECT x FROM t")
+	require.NoError(t, err)
+	require.True(t, rows.Next())
+	require.NoError(t, rows.Close())
+	require.NoError(t, rows.Close())
+	assert.Equal(t, int32(1), deletes.Load(), "closing rows before the end cancels the query once")
+
+	rows, err = db.Query("SELECT x FROM t")
+	require.NoError(t, err)
+	for rows.Next() {
+	}
+	require.NoError(t, rows.Err())
+	require.NoError(t, rows.Close())
+	assert.Equal(t, int32(1), deletes.Load(), "a query read to the end is not cancelled")
+}
+
+func TestDo_NoContentIsSuccess(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	c, err := NewClient(srv.URL)
+	require.NoError(t, err)
+	_, _, err = c.NewSession().CancelQuery(context.Background(), srv.URL+"/v1/statement/executing/q1/1")
+	assert.NoError(t, err)
 }

@@ -432,6 +432,12 @@ func (s *Session) Do(ctx context.Context, req *http.Request, v any) (*http.Respo
 			return resp, err
 		}
 
+		// The server answers a cancelled query's DELETE with no content.
+		if resp.StatusCode == http.StatusNoContent {
+			resp.Body.Close()
+			return resp, nil
+		}
+
 		if resp.StatusCode == http.StatusServiceUnavailable {
 			if closeErr := resp.Body.Close(); closeErr != nil {
 				log.Debug().Err(closeErr).Msg("failed to close response body")
