@@ -618,7 +618,35 @@ func (c *Client) prepareURL(urlStr string) (*url.URL, error) {
 	if forceHTTPS && u.Scheme == "http" {
 		u.Scheme = "https"
 	}
+	if !sameServer(u, serverUrl, forceHTTPS) {
+		return nil, fmt.Errorf("presto: %s is not on the configured server %s", u.Redacted(), serverUrl.Redacted())
+	}
 	return u, nil
+}
+
+// sameServer reports whether u has the scheme, host and port of the
+// configured server. URLs the server returns, such as nextUri, are absolute,
+// and every request carries the session's credentials, so a request to any
+// other server is refused.
+func sameServer(u, server *url.URL, forceHTTPS bool) bool {
+	scheme := strings.ToLower(server.Scheme)
+	if forceHTTPS && scheme == "http" {
+		scheme = "https"
+	}
+	return strings.EqualFold(u.Scheme, scheme) &&
+		strings.EqualFold(u.Hostname(), server.Hostname()) &&
+		portOrDefault(u.Port(), u.Scheme) == portOrDefault(server.Port(), scheme)
+}
+
+// portOrDefault returns port, or the default port of scheme when it is empty.
+func portOrDefault(port, scheme string) string {
+	if port != "" {
+		return port
+	}
+	if strings.EqualFold(scheme, "https") {
+		return "443"
+	}
+	return "80"
 }
 
 func (c *Client) prepareRequestBody(body any) (io.Reader, string, error) {

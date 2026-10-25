@@ -194,6 +194,12 @@ client, err := presto.NewClient("http://trino-coordinator:8443")
 client.IsTrino(true).ForceHTTPS(true)
 ```
 
+Requests go only to the scheme, host and port of the server URL; a request
+for a URL the server returns on any other server, such as a `nextUri`, fails.
+Behind a proxy that terminates TLS or changes the host name, have the
+coordinator honor the `X-Forwarded-Proto` and `X-Forwarded-Host` headers so
+that it returns URLs on the proxy's address.
+
 ### TLS Configuration
 
 #### Via DSN (database/sql)

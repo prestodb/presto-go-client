@@ -10,8 +10,10 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -186,6 +188,11 @@ func TestNewRequest_OptionsAndEncoding(t *testing.T) {
 func TestDo_RetryAndState(t *testing.T) {
 	attempts := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/clear" {
+			w.Header().Set("X-Presto-Clear-Transaction-Id", "true")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		attempts++
 		if attempts == 1 {
 			w.WriteHeader(http.StatusServiceUnavailable)
@@ -209,13 +216,7 @@ func TestDo_RetryAndState(t *testing.T) {
 	assert.Equal(t, "tx123", s.transactionId)
 
 	// Test Clearing Transaction
-	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Presto-Clear-Transaction-Id", "true")
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv2.Close()
-
-	req2, _ := s.NewRequest("GET", srv2.URL, nil)
+	req2, _ := s.NewRequest("GET", "/clear", nil)
 	_, _ = s.Do(context.Background(), req2, nil)
 	assert.Empty(t, s.transactionId)
 }
@@ -600,4 +601,54 @@ func TestSession_Source(t *testing.T) {
 	req, err := s.NewRequest("GET", "/", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "myapp", req.Header.Get("X-Presto-Source"))
+}
+
+func TestSameServer(t *testing.T) {
+	server, err := url.Parse("http://presto.example.com:8080")
+	require.NoError(t, err)
+	tests := []struct {
+		url        string
+		forceHTTPS bool
+		want       bool
+	}{
+		{"http://presto.example.com:8080/v1/statement/q/1", false, true},
+		{"http://PRESTO.example.com:8080/v1/statement/q/1", false, true},
+		{"http://other.example.com:8080/v1/statement/q/1", false, false},
+		{"http://presto.example.com:9090/v1/statement/q/1", false, false},
+		{"https://presto.example.com:8080/v1/statement/q/1", false, false},
+		{"https://presto.example.com:8080/v1/statement/q/1", true, true},
+	}
+	for _, tt := range tests {
+		u, err := url.Parse(tt.url)
+		require.NoError(t, err)
+		assert.Equal(t, tt.want, sameServer(u, server, tt.forceHTTPS), tt.url)
+	}
+
+	defaultPort, err := url.Parse("https://presto.example.com")
+	require.NoError(t, err)
+	u, err := url.Parse("https://presto.example.com:443/v1/statement/q/1")
+	require.NoError(t, err)
+	assert.True(t, sameServer(u, defaultPort, false), "an explicit default port is the same server")
+}
+
+func TestFetchNextBatch_RefusesAnotherServer(t *testing.T) {
+	var otherHits atomic.Int32
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		otherHits.Add(1)
+	}))
+	defer other.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprintf(w, `{"id":"q1","nextUri":%q}`, other.URL+"/v1/statement/executing/q1/1")
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(srv.URL)
+	require.NoError(t, err)
+	s := c.NewSession().User("alice")
+	qr, _, err := s.Query(context.Background(), "SELECT 1")
+	require.NoError(t, err)
+
+	err = qr.FetchNextBatch(context.Background())
+	assert.ErrorContains(t, err, "is not on the configured server")
+	assert.Zero(t, otherHits.Load(), "no request may reach a server other than the configured one")
 }

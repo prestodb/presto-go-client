@@ -95,7 +95,7 @@ Transactions store the context from `BeginTx` and use it for `Commit`/`Rollback`
 
 ### Query Lifecycle
 
-`Session.Query()` → POST to `/v1/statement` → returns `QueryResults`. Results are fetched batch-by-batch via `FetchNextBatch()` or streamed via `Drain()`. `Drain()` first processes any data already present in the initial response before fetching subsequent batches. Context cancellation triggers a DELETE request to cancel the query server-side. `FetchNextBatch` uses a local variable to iterate through empty batches and only commits the final state to the caller's `QueryResults` on success, preventing partial mutation on error.
+`Session.Query()` → POST to `/v1/statement` → returns `QueryResults`. Results are fetched batch-by-batch via `FetchNextBatch()` or streamed via `Drain()`. `Drain()` first processes any data already present in the initial response before fetching subsequent batches. Context cancellation triggers a DELETE request to cancel the query server-side. `prepareURL` refuses any URL whose scheme, host or port differs from the server URL (`sameServer`), so a `nextUri` on another server is never requested with the session's credentials. `FetchNextBatch` uses a local variable to iterate through empty batches and only commits the final state to the caller's `QueryResults` on success, preventing partial mutation on error.
 
 ### Test Patterns
 
