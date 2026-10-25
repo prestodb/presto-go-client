@@ -601,3 +601,27 @@ func TestSession_Source(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "myapp", req.Header.Get("X-Presto-Source"))
 }
+
+func TestNewRequest_PasswordRequiresHTTPS(t *testing.T) {
+	plain, err := NewClient("http://localhost:8080")
+	require.NoError(t, err)
+	_, err = plain.NewSession().UserPassword("alice", "secret").NewRequest("POST", "v1/statement", "SELECT 1")
+	assert.ErrorContains(t, err, "requires an https server URL")
+
+	withBasicAuth, err := NewClient("http://localhost:8080", "YWxpY2U6c2VjcmV0")
+	require.NoError(t, err)
+	_, err = withBasicAuth.NewSession().NewRequest("POST", "v1/statement", "SELECT 1")
+	assert.ErrorContains(t, err, "requires an https server URL")
+
+	_, err = plain.NewSession().User("alice").NewRequest("POST", "v1/statement", "SELECT 1")
+	assert.NoError(t, err, "a user without a password does not need https")
+
+	tls, err := NewClient("https://localhost:8443")
+	require.NoError(t, err)
+	_, err = tls.NewSession().UserPassword("alice", "secret").NewRequest("POST", "v1/statement", "SELECT 1")
+	assert.NoError(t, err)
+
+	plain.ForceHTTPS(true)
+	_, err = plain.NewSession().UserPassword("alice", "secret").NewRequest("POST", "v1/statement", "SELECT 1")
+	assert.NoError(t, err, "ForceHTTPS upgrades the request to https")
+}

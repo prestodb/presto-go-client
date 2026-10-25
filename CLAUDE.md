@@ -73,7 +73,7 @@ Persistent `RequestOptions` on Session apply to **every** request including `Fet
 
 DSN format: `presto://[user[:password]@]host[:port][/catalog[/schema]][?params]` (also `trino://` for Trino mode). Parameter interpolation replaces `?` placeholders client-side into SQL literals.
 
-Core DSN params: `timezone`, `client_tags`, `client_info`, `source`. TLS params: `ssl_cert`, `ssl_key`, `ssl_ca`, `ssl_skip_verify` (any ssl_* param auto-upgrades scheme to HTTPS). Unrecognized params become session properties.
+Core DSN params: `timezone`, `client_tags`, `client_info`, `source`. TLS params: `ssl`, `ssl_cert`, `ssl_key`, `ssl_ca`, `ssl_skip_verify` (`ssl=true` or any ssl_* param upgrades the scheme to HTTPS). `Session.NewRequest` refuses to send a password (basic auth or `UserPassword`) over plain HTTP. Unrecognized params become session properties.
 
 Auth module DSN params are parsed and stripped by each module before passing the cleaned DSN to `presto.NewConnector`:
 - **Kerberos**: `kerberos_keytab`, `kerberos_principal`, `kerberos_realm`, `kerberos_config`, `kerberos_service_spn`

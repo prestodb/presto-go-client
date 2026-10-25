@@ -389,6 +389,13 @@ func TestDsnConfig_ServerURL(t *testing.T) {
 		cfg := &dsnConfig{host: "localhost", port: "8443", sslCA: "/path/ca.pem"}
 		assert.Equal(t, "https://localhost:8443", cfg.serverURL())
 	})
+
+	t.Run("ssl=true upgrades to HTTPS", func(t *testing.T) {
+		cfg, err := parseDSN("presto://alice:secret@localhost:8443/hive?ssl=true")
+		require.NoError(t, err)
+		assert.Equal(t, "https://localhost:8443", cfg.serverURL())
+		assert.Empty(t, cfg.sessionProps, "ssl is not a session property")
+	})
 }
 
 func TestBuildTLSConfig(t *testing.T) {

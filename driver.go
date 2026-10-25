@@ -46,6 +46,7 @@ type dsnConfig struct {
 	sslKey        string
 	sslCA         string
 	sslSkipVerify bool
+	ssl           bool
 	// Unrecognized query params become session properties.
 	sessionProps map[string]string
 }
@@ -56,7 +57,8 @@ type dsnConfig struct {
 //
 //	trino://...
 //
-// Query params: timezone, client_tags, client_info, source.
+// Query params: timezone, client_tags, client_info, source, ssl and the ssl_*
+// file parameters.
 // Unrecognized params become session properties.
 func parseDSN(dsn string) (*dsnConfig, error) {
 	u, err := url.Parse(dsn)
@@ -122,6 +124,8 @@ func parseDSN(dsn string) (*dsnConfig, error) {
 			cfg.sslKey = val
 		case "ssl_ca":
 			cfg.sslCA = val
+		case "ssl":
+			cfg.ssl = val == "true" || val == "1"
 		case "ssl_skip_verify":
 			cfg.sslSkipVerify = val == "true" || val == "1"
 		default:
@@ -143,7 +147,7 @@ func (cfg *dsnConfig) serverURL() string {
 
 // hasTLS returns true if any TLS-related DSN parameter is set.
 func (cfg *dsnConfig) hasTLS() bool {
-	return cfg.sslCert != "" || cfg.sslKey != "" || cfg.sslCA != "" || cfg.sslSkipVerify
+	return cfg.ssl || cfg.sslCert != "" || cfg.sslKey != "" || cfg.sslCA != "" || cfg.sslSkipVerify
 }
 
 // buildTLSConfig constructs a *tls.Config from DSN parameters.

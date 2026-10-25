@@ -137,13 +137,16 @@ Default port is 8080 for both schemes. Query parameters:
 | `client_tags` | Comma-separated tags |
 | `client_info` | Client info string |
 | `source` | Query source identifier |
+| `ssl` | Connect over HTTPS with the system's trusted CAs (`true`/`1`) |
 | `ssl_cert` | Path to client certificate (PEM) for mutual TLS |
 | `ssl_key` | Path to client private key (PEM) |
 | `ssl_ca` | Path to CA certificate (PEM) for custom CAs |
 | `ssl_skip_verify` | Skip TLS certificate verification (`true`/`1`) |
 | *(other)* | Set as session properties |
 
-When any `ssl_*` parameter is set, the connection automatically upgrades to HTTPS.
+When `ssl` or any `ssl_*` parameter is set, the connection uses HTTPS. A
+password, in the DSN or set with `UserPassword` or `NewClient`, is sent only
+over HTTPS; a request that would send one over HTTP fails.
 
 #### Using `sql.OpenDB` with a Connector
 
@@ -187,7 +190,7 @@ tx, err := db.BeginTx(ctx, &sql.TxOptions{
 client, err := presto.NewClient("http://presto-coordinator:8080")
 
 // With basic auth
-client, err := presto.NewClient("http://presto-coordinator:8080", "base64-encoded-credentials")
+client, err := presto.NewClient("https://presto-coordinator:8443", "base64-encoded-credentials")
 
 // Trino mode with HTTPS
 client, err := presto.NewClient("http://trino-coordinator:8443")

@@ -275,6 +275,9 @@ func (s *Session) NewRequest(method, urlStr string, body any, options ...Request
 	if err != nil {
 		return nil, err
 	}
+	if u.Scheme != "https" && s.sendsPassword() {
+		return nil, errors.New("presto: password authentication requires an https server URL")
+	}
 
 	bodyReader, contentType, err := s.client.prepareRequestBody(body)
 	if err != nil {
@@ -305,6 +308,19 @@ func (s *Session) NewRequest(method, urlStr string, body any, options ...Request
 	}
 
 	return req, nil
+}
+
+// sendsPassword reports whether applyHeaders adds basic authentication
+// credentials, which the client sends only over https, as the Presto JDBC
+// driver does.
+func (s *Session) sendsPassword() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.userInfo == nil {
+		return false
+	}
+	_, hasPassword := s.userInfo.Password()
+	return s.basicAuth != "" || hasPassword
 }
 
 func (s *Session) applyHeaders(req *http.Request) {
