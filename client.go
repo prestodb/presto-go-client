@@ -92,7 +92,7 @@ func NewClient(serverUrl string, basicAuth ...string) (*Client, error) {
 	}
 
 	c := &Client{
-		httpClient: &http.Client{},
+		httpClient: &http.Client{CheckRedirect: refuseRedirect},
 		serverUrl:  parsedUrl,
 		Session: Session{
 			userInfo:      url.User(DefaultUser),
@@ -456,6 +456,11 @@ func (s *Session) Do(ctx context.Context, req *http.Request, v any) (*http.Respo
 			continue
 		}
 
+		if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+			resp.Body.Close()
+			return resp, fmt.Errorf("presto: server answered %d with a redirect to %q, which is not followed", resp.StatusCode, resp.Header.Get("Location"))
+		}
+
 		body, readErr := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if readErr != nil {
@@ -577,11 +582,25 @@ func (c *Client) GetHost() string {
 
 // HTTPClient replaces the underlying http.Client. Use this to provide a
 // client with custom TLS configuration, timeouts, or transport settings.
+// Redirects are not followed unless hc sets its own CheckRedirect; the
+// client uses a copy of hc for that.
 func (c *Client) HTTPClient(hc *http.Client) *Client {
+	if hc.CheckRedirect == nil {
+		withoutRedirects := *hc
+		withoutRedirects.CheckRedirect = refuseRedirect
+		hc = &withoutRedirects
+	}
 	c.clientMu.Lock()
 	defer c.clientMu.Unlock()
 	c.httpClient = hc
 	return c
+}
+
+// refuseRedirect returns a redirect response to the caller instead of
+// following it, since following it would resend the statement and the
+// session's headers to the redirect target.
+func refuseRedirect(*http.Request, []*http.Request) error {
+	return http.ErrUseLastResponse
 }
 
 // TLSConfig configures TLS on the client's HTTP transport. If the client

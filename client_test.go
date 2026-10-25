@@ -12,7 +12,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -564,7 +566,36 @@ func TestClient_HTTPClient(t *testing.T) {
 	c, _ := NewClient("http://localhost")
 	custom := &http.Client{Timeout: 42}
 	c.HTTPClient(custom)
-	assert.Equal(t, custom, c.httpClient)
+	assert.Equal(t, time.Duration(42), c.httpClient.Timeout)
+	assert.NotNil(t, c.httpClient.CheckRedirect, "redirects are refused")
+	assert.Nil(t, custom.CheckRedirect, "the caller's client is not modified")
+
+	ownPolicy := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return nil }}
+	c.HTTPClient(ownPolicy)
+	assert.Same(t, ownPolicy, c.httpClient, "a client with its own redirect policy is used as given")
+}
+
+func TestDo_RedirectIsNotFollowed(t *testing.T) {
+	var targetHits atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetHits.Add(1)
+	}))
+	defer target.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+"/v1/statement", http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+
+	for _, hc := range []*http.Client{nil, {}} {
+		c, err := NewClient(srv.URL)
+		require.NoError(t, err)
+		if hc != nil {
+			c.HTTPClient(hc)
+		}
+		_, _, err = c.NewSession().User("alice").Query(context.Background(), "SELECT 1")
+		assert.ErrorContains(t, err, "redirect")
+	}
+	assert.Zero(t, targetHits.Load(), "the statement must not be resent to the redirect target")
 }
 
 // --- Segment 8: Concurrency Safety ---

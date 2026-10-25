@@ -79,7 +79,7 @@ Auth module DSN params are parsed and stripped by each module before passing the
 - **Kerberos**: `kerberos_keytab`, `kerberos_principal`, `kerberos_realm`, `kerberos_config`, `kerberos_service_spn`
 - **OAuth2**: `access_token` (static token) or `oauth2_client_id`, `oauth2_client_secret`, `oauth2_token_url`, `oauth2_scopes` (client credentials flow)
 
-`ConnectorOption` functions (`WithSessionSetup`, `WithHTTPClient`) configure the connector. Auth modules use `WithSessionSetup` to inject request options into every session created by `Connect()`.
+`ConnectorOption` functions (`WithSessionSetup`, `WithHTTPClient`) configure the connector. `NewClient` and `Client.HTTPClient` install `refuseRedirect` as `CheckRedirect` (on a copy of a caller's client that has none), and `Session.Do` turns a 3xx response into an error. Auth modules use `WithSessionSetup` to inject request options into every session created by `Connect()`.
 
 Complex Presto types (ARRAY, MAP, ROW) are returned as JSON strings through the driver. `NullSlice[T]`, `NullMap[K,V]`, and `NullRow[T]` in `types.go` implement `sql.Scanner` for deserializing them.
 

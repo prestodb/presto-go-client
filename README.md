@@ -233,6 +233,10 @@ connector, _ := presto.NewConnector("presto://host:8443/catalog",
 )
 ```
 
+The client does not follow redirects: a redirect response fails the request,
+since following it would resend the statement and the session's headers. An
+`http.Client` that sets its own `CheckRedirect` keeps that policy.
+
 ### Session Management
 
 Sessions provide isolated execution contexts. Each session maintains its own catalog, schema, user identity, transaction state, and session parameters.
