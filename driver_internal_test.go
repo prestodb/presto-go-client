@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/base64"
+	"math"
 	"reflect"
 	"testing"
 	"time"
@@ -143,6 +144,9 @@ func TestValueToSQL(t *testing.T) {
 		{"int64", int64(42), "42"},
 		{"negative int64", int64(-100), "-100"},
 		{"float64", float64(3.14), "3.14"},
+		{"NaN", math.NaN(), "nan()"},
+		{"positive infinity", math.Inf(1), "infinity()"},
+		{"negative infinity", math.Inf(-1), "-infinity()"},
 		{"bool true", true, "TRUE"},
 		{"bool false", false, "FALSE"},
 		{"string", "hello", "'hello'"},

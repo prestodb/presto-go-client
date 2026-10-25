@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -205,6 +206,16 @@ func valueToSQL(v driver.Value) (string, error) {
 	case int64:
 		return strconv.FormatInt(val, 10), nil
 	case float64:
+		// Presto has no literal for these values, and the formatted NaN or
+		// +Inf would be read as an identifier or an expression.
+		switch {
+		case math.IsNaN(val):
+			return "nan()", nil
+		case math.IsInf(val, 1):
+			return "infinity()", nil
+		case math.IsInf(val, -1):
+			return "-infinity()", nil
+		}
 		return strconv.FormatFloat(val, 'f', -1, 64), nil
 	case bool:
 		if val {
